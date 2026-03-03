@@ -5,7 +5,21 @@
 
 import fs from 'fs';
 import path from 'path';
-import { query, HookCallback, PreCompactHookInput, PreToolUseHookInput } from '@anthropic-ai/claude-agent-sdk';
+import {
+  query,
+  HookCallback,
+  PreCompactHookInput,
+  PreToolUseHookInput,
+} from '@anthropic-ai/claude-agent-sdk';
+import {
+  LlmAgent,
+  MCPToolset,
+  Runner,
+  InMemorySessionService,
+  isFinalResponse,
+  stringifyContent,
+  Event,
+} from '@google/adk';
 import { fileURLToPath } from 'url';
 import { spawn } from 'child_process';
 
@@ -35,8 +49,6 @@ const IPC_POLL_MS = 500;
 
 /**
  * Resolve workspace root from the group folder path.
- * In containers: groupFolder = /workspace/group → root = /workspace
- * Physical: groupFolder = /path/to/groups/folder → root = groupFolder (self-contained)
  */
 function resolveWorkspaceRoot(groupFolder: string): string {
   if (groupFolder === '/workspace/group') return '/workspace';
@@ -67,7 +79,11 @@ interface Driver {
     sdkEnv: Record<string, string | undefined>;
     resumeAt?: string;
     onResult: (output: ContainerOutput) => void;
-  }): Promise<{ newSessionId?: string; lastAssistantUuid?: string; closedDuringQuery: boolean }>;
+  }): Promise<{
+    newSessionId?: string;
+    lastAssistantUuid?: string;
+    closedDuringQuery: boolean;
+  }>;
 }
 
 /**
@@ -137,16 +153,32 @@ class ClaudeDriver implements Driver {
         resume: params.sessionId,
         resumeSessionAt: params.resumeAt,
         systemPrompt: globalClaudeMd
-          ? { type: 'preset' as const, preset: 'claude_code' as const, append: globalClaudeMd }
+          ? {
+              type: 'preset' as const,
+              preset: 'claude_code' as const,
+              append: globalClaudeMd,
+            }
           : undefined,
         allowedTools: [
-          'Bash', 'Read', 'Write', 'Edit', 'Glob', 'Grep',
-          'WebSearch', 'WebFetch',
-          'Task', 'TaskOutput', 'TaskStop',
-          'TeamCreate', 'TeamDelete', 'SendMessage',
-          'TodoWrite', 'ToolSearch', 'Skill',
+          'Bash',
+          'Read',
+          'Write',
+          'Edit',
+          'Glob',
+          'Grep',
+          'WebSearch',
+          'WebFetch',
+          'Task',
+          'TaskOutput',
+          'TaskStop',
+          'TeamCreate',
+          'TeamDelete',
+          'SendMessage',
+          'TodoWrite',
+          'ToolSearch',
+          'Skill',
           'NotebookEdit',
-          'mcp__aquaclaw__*'
+          'mcp__aquaclaw__*',
         ],
         env: params.sdkEnv,
         permissionMode: 'bypassPermissions',
@@ -164,10 +196,16 @@ class ClaudeDriver implements Driver {
           },
         },
         hooks: {
-          PreCompact: [{ hooks: [createPreCompactHook(params.containerInput.assistantName)] }],
+          PreCompact: [
+            {
+              hooks: [
+                createPreCompactHook(params.containerInput.assistantName),
+              ],
+            },
+          ],
           PreToolUse: [{ matcher: 'Bash', hooks: [createSanitizeBashHook()] }],
         },
-      }
+      },
     })) {
       if (message.type === 'assistant' && 'uuid' in message) {
         lastAssistantUuid = (message as { uuid: string }).uuid;
@@ -176,11 +214,12 @@ class ClaudeDriver implements Driver {
         newSessionId = (message as any).session_id;
       }
       if (message.type === 'result') {
-        const textResult = 'result' in message ? (message as { result?: string }).result : null;
+        const textResult =
+          'result' in message ? (message as { result?: string }).result : null;
         params.onResult({
           status: 'success',
           result: textResult || null,
-          newSessionId
+          newSessionId,
         });
       }
     }
@@ -191,9 +230,11 @@ class ClaudeDriver implements Driver {
 }
 
 /**
- * Gemini Driver spawning the `gemini` CLI.
+ * Gemini Driver using @google/adk.
  */
-class GeminiDriver implements Driver {
+class AdkGeminiDriver implements Driver {
+  private sessionService = new InMemorySessionService();
+
   async run(params: {
     prompt: string;
     sessionId?: string;
@@ -202,7 +243,88 @@ class GeminiDriver implements Driver {
     resumeAt?: string;
     onResult: (output: ContainerOutput) => void;
   }) {
-    return new Promise<{ newSessionId?: string; lastAssistantUuid?: string; closedDuringQuery: boolean }>((resolve, reject) => {
+    const __dirname = path.dirname(fileURLToPath(import.meta.url));
+    const mcpServerPath = path.join(__dirname, 'ipc-mcp-stdio.js');
+
+    const aquaclawTools = new MCPToolset({
+      type: 'StdioConnectionParams',
+      serverParams: {
+        command: 'node',
+        args: [mcpServerPath],
+        env: {
+          AQUACLAW_CHAT_JID: params.containerInput.chatJid,
+          AQUACLAW_GROUP_FOLDER: params.containerInput.groupFolder,
+          AQUACLAW_IS_MAIN: params.containerInput.isMain ? '1' : '0',
+          ...params.sdkEnv,
+        } as any,
+      },
+    });
+
+    const agent = new LlmAgent({
+      name: params.containerInput.assistantName || '雪蟹',
+      model: params.sdkEnv.AC_MODEL || 'gemini-2.0-flash',
+      instruction:
+        'You are a professional software engineer. Use tools to solve tasks.',
+      tools: [aquaclawTools],
+      beforeToolCallback: async (context) => {
+        // Implement bash sanitization if needed
+        return undefined;
+      },
+    });
+
+    const runner = new Runner({
+      appName: 'AquaClaw',
+      agent,
+      sessionService: this.sessionService,
+    });
+
+    const currentSessionId = params.sessionId || 'default-session';
+    log(`Running ADK Gemini agent (session: ${currentSessionId})...`);
+
+    const resultGenerator = runner.runAsync({
+      userId: 'aquaclaw-user',
+      sessionId: currentSessionId,
+      newMessage: {
+        role: 'user',
+        parts: [{ text: params.prompt }],
+      },
+    });
+
+    let finalResponseText = '';
+
+    for await (const event of resultGenerator) {
+      if (isFinalResponse(event)) {
+        finalResponseText = stringifyContent(event);
+      }
+    }
+
+    params.onResult({
+      status: 'success',
+      result: finalResponseText || null,
+      newSessionId: currentSessionId,
+    });
+
+    return { newSessionId: currentSessionId, closedDuringQuery: false };
+  }
+}
+
+/**
+ * Gemini Driver spawning the `gemini` CLI.
+ */
+class GeminiCliDriver implements Driver {
+  async run(params: {
+    prompt: string;
+    sessionId?: string;
+    containerInput: ContainerInput;
+    sdkEnv: Record<string, string | undefined>;
+    resumeAt?: string;
+    onResult: (output: ContainerOutput) => void;
+  }) {
+    return new Promise<{
+      newSessionId?: string;
+      lastAssistantUuid?: string;
+      closedDuringQuery: boolean;
+    }>((resolve, reject) => {
       const args = ['-p', params.prompt, '-y', '-o', 'stream-json'];
       if (params.sessionId) {
         args.push('--resume', params.sessionId);
@@ -211,7 +333,7 @@ class GeminiDriver implements Driver {
       log(`Spawning gemini CLI: gemini ${args.join(' ')}`);
       const child = spawn('gemini', args, {
         cwd: params.containerInput.groupFolder,
-        env: { ...params.sdkEnv, ...process.env }
+        env: { ...params.sdkEnv, ...process.env },
       });
 
       let newSessionId: string | undefined;
@@ -227,24 +349,23 @@ class GeminiDriver implements Driver {
           if (!line.trim()) continue;
           try {
             const parsed = JSON.parse(line);
-            // stream-json format:
-            // {"type":"init","session_id":"..."}
-            // {"type":"message","role":"assistant","content":"..."}
-            // {"type":"result","status":"success","stats":{...}}
             if (parsed.type === 'init' && parsed.session_id) {
               newSessionId = parsed.session_id;
             }
-            if (parsed.type === 'message' && parsed.role === 'assistant' && parsed.content) {
+            if (
+              parsed.type === 'message' &&
+              parsed.role === 'assistant' &&
+              parsed.content
+            ) {
               assistantContent = parsed.content;
             }
             if (parsed.type === 'result') {
               params.onResult({
                 status: 'success',
                 result: assistantContent || null,
-                newSessionId
+                newSessionId,
               });
             }
-            // Also support legacy -o json format
             if (parsed.response) {
               params.onResult({
                 status: 'success',
@@ -253,7 +374,7 @@ class GeminiDriver implements Driver {
               });
             }
           } catch (err) {
-            // Partial JSON or other output, ignore
+            // ignore
           }
         }
       });
@@ -265,13 +386,7 @@ class GeminiDriver implements Driver {
 
       child.on('close', (code) => {
         log(`Gemini CLI exited with code ${code}`);
-        if (code === 0) {
-          resolve({ newSessionId, closedDuringQuery: false });
-        } else {
-          // If code is non-zero but we got some output, maybe it's fine?
-          // But usually code 0 is required for success.
-          resolve({ newSessionId, closedDuringQuery: false });
-        }
+        resolve({ newSessionId, closedDuringQuery: false });
       });
 
       child.on('error', (err) => {
@@ -294,11 +409,15 @@ class CodexDriver implements Driver {
     resumeAt?: string;
     onResult: (output: ContainerOutput) => void;
   }) {
-    return new Promise<{ newSessionId?: string; lastAssistantUuid?: string; closedDuringQuery: boolean }>((resolve) => {
+    return new Promise<{
+      newSessionId?: string;
+      lastAssistantUuid?: string;
+      closedDuringQuery: boolean;
+    }>((resolve) => {
       params.onResult({
         status: 'error',
         result: null,
-        error: 'Codex driver not yet implemented'
+        error: 'Codex driver not yet implemented',
       });
       resolve({ closedDuringQuery: false });
     });
@@ -334,7 +453,9 @@ class MessageStream {
         yield this.queue.shift()!;
       }
       if (this.done) return;
-      await new Promise<void>(r => { this.waiting = r; });
+      await new Promise<void>((r) => {
+        this.waiting = r;
+      });
       this.waiting = null;
     }
   }
@@ -344,7 +465,9 @@ async function readStdin(): Promise<string> {
   return new Promise((resolve, reject) => {
     let data = '';
     process.stdin.setEncoding('utf8');
-    process.stdin.on('data', chunk => { data += chunk; });
+    process.stdin.on('data', (chunk) => {
+      data += chunk;
+    });
     process.stdin.on('end', () => resolve(data));
     process.stdin.on('error', reject);
   });
@@ -354,12 +477,10 @@ function createPreCompactHook(assistantName?: string): HookCallback {
   return async (input, _toolUseId, _context) => {
     const preCompact = input as PreCompactHookInput;
     const transcriptPath = preCompact.transcript_path;
-    const sessionId = preCompact.session_id;
 
     if (!transcriptPath || !fs.existsSync(transcriptPath)) {
       return {};
     }
-    // Archive logic can be added here if needed for Gemini too
     return {};
   };
 }
@@ -387,7 +508,11 @@ function createSanitizeBashHook(): HookCallback {
 
 function shouldClose(): boolean {
   if (fs.existsSync(IPC_INPUT_CLOSE_SENTINEL)) {
-    try { fs.unlinkSync(IPC_INPUT_CLOSE_SENTINEL); } catch { }
+    try {
+      fs.unlinkSync(IPC_INPUT_CLOSE_SENTINEL);
+    } catch {
+      /* ignore */
+    }
     return true;
   }
   return false;
@@ -396,8 +521,9 @@ function shouldClose(): boolean {
 function drainIpcInput(): string[] {
   try {
     fs.mkdirSync(IPC_INPUT_DIR, { recursive: true });
-    const files = fs.readdirSync(IPC_INPUT_DIR)
-      .filter(f => f.endsWith('.json'))
+    const files = fs
+      .readdirSync(IPC_INPUT_DIR)
+      .filter((f) => f.endsWith('.json'))
       .sort();
 
     const messages: string[] = [];
@@ -410,7 +536,11 @@ function drainIpcInput(): string[] {
           messages.push(data.text);
         }
       } catch (err) {
-        try { fs.unlinkSync(filePath); } catch { }
+        try {
+          fs.unlinkSync(filePath);
+        } catch {
+          /* ignore */
+        }
       }
     }
     return messages;
@@ -443,13 +573,19 @@ async function main(): Promise<void> {
   try {
     const stdinData = await readStdin();
     containerInput = JSON.parse(stdinData);
-    try { fs.unlinkSync('/tmp/input.json'); } catch { }
-    log(`Received input for group: ${containerInput.groupFolder} (CLI: ${containerInput.codingCli || 'gemini'})`);
+    try {
+      fs.unlinkSync('/tmp/input.json');
+    } catch {
+      /* ignore */
+    }
+    log(
+      `Received input for group: ${containerInput.groupFolder} (CLI: ${containerInput.codingCli || 'gemini'})`,
+    );
   } catch (err) {
     writeOutput({
       status: 'error',
       result: null,
-      error: `Failed to parse input: ${err instanceof Error ? err.message : String(err)}`
+      error: `Failed to parse input: ${err instanceof Error ? err.message : String(err)}`,
     });
     process.exit(1);
   }
@@ -466,7 +602,11 @@ async function main(): Promise<void> {
 
   let sessionId = containerInput.sessionId;
   fs.mkdirSync(IPC_INPUT_DIR, { recursive: true });
-  try { fs.unlinkSync(IPC_INPUT_CLOSE_SENTINEL); } catch { }
+  try {
+    fs.unlinkSync(IPC_INPUT_CLOSE_SENTINEL);
+  } catch {
+    /* ignore */
+  }
 
   let prompt = containerInput.prompt;
   if (containerInput.isScheduledTask) {
@@ -482,17 +622,22 @@ async function main(): Promise<void> {
   if (codingCli === 'claude') {
     driver = new ClaudeDriver();
   } else if (codingCli === 'gemini') {
-    driver = new GeminiDriver();
+    // We use the ADK driver by default for Gemini now
+    driver = new AdkGeminiDriver();
+  } else if (codingCli === 'gemini-cli') {
+    driver = new GeminiCliDriver();
   } else if (codingCli === 'codex') {
     driver = new CodexDriver();
   } else {
-    driver = new GeminiDriver();
+    driver = new AdkGeminiDriver();
   }
 
   let resumeAt: string | undefined;
   try {
     while (true) {
-      log(`Starting query with ${codingCli} (session: ${sessionId || 'new'})...`);
+      log(
+        `Starting query with ${codingCli} (session: ${sessionId || 'new'})...`,
+      );
 
       const queryResult = await driver.run({
         prompt,
@@ -500,7 +645,7 @@ async function main(): Promise<void> {
         containerInput,
         sdkEnv,
         resumeAt,
-        onResult: (output) => writeOutput(output)
+        onResult: (output) => writeOutput(output),
       });
 
       if (queryResult.newSessionId) {
@@ -533,7 +678,7 @@ async function main(): Promise<void> {
       status: 'error',
       result: null,
       newSessionId: sessionId,
-      error: errorMessage
+      error: errorMessage,
     });
     process.exit(1);
   }
