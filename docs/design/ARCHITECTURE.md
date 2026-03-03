@@ -24,7 +24,14 @@ The physical engine that manages workspaces.
     2. Manage independent `.envrc` and workspace-specific settings.
     3. Monitor directory for changes (using `chokidar` or similar).
 
-### C. The Tmux Bridge (The Live Stream)
+### C. The Multi-CLI Driver Pattern
+To ensure flexibility and resilience against account-level issues, AquaClaw abstracts the actual coding agent logic into a **Driver** pattern.
+*   **Gemini Driver (Default):** Spawns the `gemini` CLI in non-interactive YOLO mode. It utilizes `--resume latest` to maintain state across turns and `stream-json` for real-time feedback.
+*   **Claude Driver:** Utilizes the `@anthropic-ai/claude-agent-sdk` for deep integration with Claude Code.
+*   **Codex Driver:** A specialized driver for Codex-based workflows.
+*   **Switching:** Controlled via the `AC_CODING_CLI` environment variable.
+
+### D. The Tmux Bridge (The Live Stream)
 Encapsulates the Claude Agent SDK inside a persistent Tmux session.
 *   **Purpose:** Allows the AI to persist even if the AquaClaw process restarts.
 *   **Streaming:** Real-time stdout/stderr is piped from the Tmux session directly to the Discord thread.
