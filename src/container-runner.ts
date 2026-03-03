@@ -45,6 +45,7 @@ export interface ContainerOutput {
   status: 'success' | 'error';
   result: string | null;
   newSessionId?: string;
+  lastAssistantUuid?: string;
   error?: string;
 }
 
@@ -214,7 +215,7 @@ function buildVolumeMounts(
  * Read allowed secrets from .env for passing to the container via stdin.
  * Secrets are never written to disk or mounted as files.
  */
-function readSecrets(): Record<string, string> {
+export function readSecrets(): Record<string, string> {
   const secrets = readEnvFile([
     'CLAUDE_CODE_OAUTH_TOKEN',
     'ANTHROPIC_API_KEY',

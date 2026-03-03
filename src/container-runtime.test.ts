@@ -49,11 +49,12 @@ describe('stopContainer', () => {
 // --- ensureContainerRuntimeRunning ---
 
 describe('ensureContainerRuntimeRunning', () => {
-  it('does nothing when runtime is already running', () => {
+  it('returns true when runtime is already running', () => {
     mockExecSync.mockReturnValueOnce('');
 
-    ensureContainerRuntimeRunning();
+    const result = ensureContainerRuntimeRunning();
 
+    expect(result).toBe(true);
     expect(mockExecSync).toHaveBeenCalledTimes(1);
     expect(mockExecSync).toHaveBeenCalledWith(`${CONTAINER_RUNTIME_BIN} info`, {
       stdio: 'pipe',
@@ -64,15 +65,16 @@ describe('ensureContainerRuntimeRunning', () => {
     );
   });
 
-  it('throws when docker info fails', () => {
+  it('returns false when docker info fails', () => {
     mockExecSync.mockImplementationOnce(() => {
       throw new Error('Cannot connect to the Docker daemon');
     });
 
-    expect(() => ensureContainerRuntimeRunning()).toThrow(
-      'Container runtime is required but failed to start',
+    const result = ensureContainerRuntimeRunning();
+    expect(result).toBe(false);
+    expect(logger.warn).toHaveBeenCalledWith(
+      'Container runtime not available. AquaClaw will attempt to use physical workspace fallback.',
     );
-    expect(logger.error).toHaveBeenCalled();
   });
 });
 

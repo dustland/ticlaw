@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 
-import { _initTestDatabase, getAllChats, storeChatMetadata } from './db.js';
+import { _initTestDatabase, storeChatMetadata } from './db.js';
 import { getAvailableGroups, _setRegisteredGroups } from './index.js';
+import { AvailableGroup } from './types.js';
 
 beforeEach(() => {
   _initTestDatabase();
@@ -52,9 +53,11 @@ describe('getAvailableGroups', () => {
 
     const groups = getAvailableGroups();
     expect(groups).toHaveLength(2);
-    expect(groups.map((g) => g.jid)).toContain('group1@g.us');
-    expect(groups.map((g) => g.jid)).toContain('group2@g.us');
-    expect(groups.map((g) => g.jid)).not.toContain('user@s.whatsapp.net');
+    expect(groups.map((g: AvailableGroup) => g.jid)).toContain('group1@g.us');
+    expect(groups.map((g: AvailableGroup) => g.jid)).toContain('group2@g.us');
+    expect(groups.map((g: AvailableGroup) => g.jid)).not.toContain(
+      'user@s.whatsapp.net',
+    );
   });
 
   it('excludes __group_sync__ sentinel', () => {
@@ -98,8 +101,8 @@ describe('getAvailableGroups', () => {
     });
 
     const groups = getAvailableGroups();
-    const reg = groups.find((g) => g.jid === 'reg@g.us');
-    const unreg = groups.find((g) => g.jid === 'unreg@g.us');
+    const reg = groups.find((g: AvailableGroup) => g.jid === 'reg@g.us');
+    const unreg = groups.find((g: AvailableGroup) => g.jid === 'unreg@g.us');
 
     expect(reg?.isRegistered).toBe(true);
     expect(unreg?.isRegistered).toBe(false);

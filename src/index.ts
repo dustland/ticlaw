@@ -17,6 +17,7 @@ import {
   runContainerAgent,
   writeGroupsSnapshot,
   writeTasksSnapshot,
+  readSecrets,
 } from './container-runner.js';
 import {
   cleanupOrphans,
@@ -38,220 +39,45 @@ import {
   storeMessage,
 } from './db.js';
 import { GroupQueue } from './group-queue.js';
-import { resolveGroupFolderPath } from './group-folder.js';
-import { startIpcWatcher } from './ipc.js';
-import { findChannel, formatMessages, formatOutbound } from './router.js';
-import { startSchedulerLoop } from './task-scheduler.js';
-import { Channel, NewMessage, RegisteredGroup } from './types.js';
 import { logger } from './logger.js';
+import { routeOutbound, formatMessages } from './router.js';
+import { startSchedulerLoop } from './task-scheduler.js';
+import {
+  AvailableGroup,
+  Channel,
+  NewMessage,
+  RegisteredGroup,
+} from './types.js';
+import { AcWorkspace } from './executor/workspace.js';
+import { TmuxBridge } from './executor/tmux-bridge.js';
 
-// Re-export for backwards compatibility during refactor
-export { escapeXml, formatMessages } from './router.js';
+// Define ChannelOpts locally as it was removed from registry.ts
+export interface ChannelOpts {
+  onMessage: (chatJid: string, msg: NewMessage) => void;
+  onChatMetadata: (
+    chatJid: string,
+    timestamp: string,
+    name?: string,
+    channel?: string,
+    isGroup?: boolean,
+  ) => void;
+  registeredGroups: () => Record<string, RegisteredGroup>;
+  onGroupRegistered: (jid: string, group: RegisteredGroup) => void;
+}
 
-let lastTimestamp = '';
-let sessions: Record<string, string> = {};
+// Global state
 let registeredGroups: Record<string, RegisteredGroup> = {};
-let lastAgentTimestamp: Record<string, string> = {};
+const sessions: Record<string, string> = {}; // folder -> sessionId
+const lastAgentTimestamp: Record<string, string> = {}; // chatJid -> iso
 let messageLoopRunning = false;
 
-const channels: Channel[] = [];
-const queue = new GroupQueue();
-
-function loadState(): void {
-  lastTimestamp = getRouterState('last_timestamp') || '';
-  const agentTs = getRouterState('last_agent_timestamp');
-  try {
-    lastAgentTimestamp = agentTs ? JSON.parse(agentTs) : {};
-  } catch {
-    logger.warn('Corrupted last_agent_timestamp in DB, resetting');
-    lastAgentTimestamp = {};
-  }
-  sessions = getAllSessions();
-  registeredGroups = getAllRegisteredGroups();
-  logger.info(
-    { groupCount: Object.keys(registeredGroups).length },
-    'State loaded',
-  );
-}
-
-function saveState(): void {
-  setRouterState('last_timestamp', lastTimestamp);
-  setRouterState('last_agent_timestamp', JSON.stringify(lastAgentTimestamp));
-}
-
-function registerGroup(jid: string, group: RegisteredGroup): void {
-  let groupDir: string;
-  try {
-    groupDir = resolveGroupFolderPath(group.folder);
-  } catch (err) {
-    logger.warn(
-      { jid, folder: group.folder, err },
-      'Rejecting group registration with invalid folder',
-    );
-    return;
-  }
-
-  registeredGroups[jid] = group;
-  setRegisteredGroup(jid, group);
-
-  // Create group folder
-  fs.mkdirSync(path.join(groupDir, 'logs'), { recursive: true });
-
-  logger.info(
-    { jid, name: group.name, folder: group.folder },
-    'Group registered',
-  );
-}
-
-/**
- * Get available groups list for the agent.
- * Returns groups ordered by most recent activity.
- */
-export function getAvailableGroups(): import('./container-runner.js').AvailableGroup[] {
-  const chats = getAllChats();
-  const registeredJids = new Set(Object.keys(registeredGroups));
-
-  return chats
-    .filter((c) => c.jid !== '__group_sync__' && c.is_group)
-    .map((c) => ({
-      jid: c.jid,
-      name: c.name,
-      lastActivity: c.last_message_time,
-      isRegistered: registeredJids.has(c.jid),
-    }));
-}
-
-/** @internal - exported for testing */
-export function _setRegisteredGroups(
-  groups: Record<string, RegisteredGroup>,
-): void {
-  registeredGroups = groups;
-}
-
-/**
- * Process all pending messages for a group.
- * Called by the GroupQueue when it's this group's turn.
- */
-async function processGroupMessages(chatJid: string): Promise<boolean> {
-  const group = registeredGroups[chatJid];
-  if (!group) return true;
-
-  const channel = findChannel(channels, chatJid);
-  if (!channel) {
-    logger.warn({ chatJid }, 'No channel owns JID, skipping messages');
-    return true;
-  }
-
-  const isMainGroup = group.isMain === true;
-
-  const sinceTimestamp = lastAgentTimestamp[chatJid] || '';
-  const missedMessages = getMessagesSince(
-    chatJid,
-    sinceTimestamp,
-    ASSISTANT_NAME,
-  );
-
-  if (missedMessages.length === 0) return true;
-
-  // For non-main groups, check if trigger is required and present
-  if (!isMainGroup && group.requiresTrigger !== false) {
-    const hasTrigger = missedMessages.some((m) =>
-      TRIGGER_PATTERN.test(m.content.trim()),
-    );
-    if (!hasTrigger) return true;
-  }
-
-  const prompt = formatMessages(missedMessages);
-
-  // Advance cursor so the piping path in startMessageLoop won't re-fetch
-  // these messages. Save the old cursor so we can roll back on error.
-  const previousCursor = lastAgentTimestamp[chatJid] || '';
-  lastAgentTimestamp[chatJid] =
-    missedMessages[missedMessages.length - 1].timestamp;
-  saveState();
-
-  logger.info(
-    { group: group.name, messageCount: missedMessages.length },
-    'Processing messages',
-  );
-
-  // Track idle timer for closing stdin when agent is idle
-  let idleTimer: ReturnType<typeof setTimeout> | null = null;
-
-  const resetIdleTimer = () => {
-    if (idleTimer) clearTimeout(idleTimer);
-    idleTimer = setTimeout(() => {
-      logger.debug(
-        { group: group.name },
-        'Idle timeout, closing container stdin',
-      );
-      queue.closeStdin(chatJid);
-    }, IDLE_TIMEOUT);
-  };
-
-  await channel.setTyping?.(chatJid, true);
-  let hadError = false;
-  let outputSentToUser = false;
-
-  const output = await runAgent(group, prompt, chatJid, async (result) => {
-    // Streaming output callback — called for each agent result
-    if (result.result) {
-      const raw =
-        typeof result.result === 'string'
-          ? result.result
-          : JSON.stringify(result.result);
-      // Strip <internal>...</internal> blocks — agent uses these for internal reasoning
-      const text = raw.replace(/<internal>[\s\S]*?<\/internal>/g, '').trim();
-      logger.info({ group: group.name }, `Agent output: ${raw.slice(0, 200)}`);
-      if (text) {
-        await channel.sendMessage(chatJid, text);
-        outputSentToUser = true;
-      }
-      // Only reset idle timer on actual results, not session-update markers (result: null)
-      resetIdleTimer();
-    }
-
-    if (result.status === 'success') {
-      queue.notifyIdle(chatJid);
-    }
-
-    if (result.status === 'error') {
-      hadError = true;
-    }
-  });
-
-  await channel.setTyping?.(chatJid, false);
-  if (idleTimer) clearTimeout(idleTimer);
-
-  if (output === 'error' || hadError) {
-    // If we already sent output to the user, don't roll back the cursor —
-    // the user got their response and re-processing would send duplicates.
-    if (outputSentToUser) {
-      logger.warn(
-        { group: group.name },
-        'Agent error after output was sent, skipping cursor rollback to prevent duplicates',
-      );
-      return true;
-    }
-    // Roll back cursor so retries can re-process these messages
-    lastAgentTimestamp[chatJid] = previousCursor;
-    saveState();
-    logger.warn(
-      { group: group.name },
-      'Agent error, rolled back message cursor for retry',
-    );
-    return false;
-  }
-
-  return true;
-}
-
+// Forward declaration for recursion
 async function runAgent(
-  group: RegisteredGroup,
-  prompt: string,
   chatJid: string,
+  prompt: string,
   onOutput?: (output: ContainerOutput) => Promise<void>,
 ): Promise<'success' | 'error'> {
+  const group = registeredGroups[chatJid];
   const isMain = group.isMain === true;
   const sessionId = sessions[group.folder];
 
@@ -292,20 +118,36 @@ async function runAgent(
     : undefined;
 
   try {
-    const output = await runContainerAgent(
-      group,
-      {
-        prompt,
-        sessionId,
-        groupFolder: group.folder,
-        chatJid,
-        isMain,
-        assistantName: ASSISTANT_NAME,
-      },
-      (proc, containerName) =>
-        queue.registerProcess(chatJid, proc, containerName, group.folder),
-      wrappedOnOutput,
-    );
+    let output: ContainerOutput;
+
+    if (isContainerRuntimeAvailable) {
+      output = await runContainerAgent(
+        group,
+        {
+          prompt,
+          sessionId,
+          groupFolder: group.folder,
+          chatJid,
+          isMain,
+          assistantName: ASSISTANT_NAME,
+        },
+        (proc, containerName) =>
+          queue.registerProcess(chatJid, proc, containerName, group.folder),
+        wrappedOnOutput,
+      );
+    } else {
+      logger.info({ group: group.name }, 'Using physical agent fallback');
+      output = await runPhysicalAgent(
+        group,
+        {
+          prompt,
+          sessionId,
+          chatJid,
+          isMain,
+        },
+        wrappedOnOutput,
+      );
+    }
 
     if (output.newSessionId) {
       sessions[group.folder] = output.newSessionId;
@@ -313,10 +155,7 @@ async function runAgent(
     }
 
     if (output.status === 'error') {
-      logger.error(
-        { group: group.name, error: output.error },
-        'Container agent error',
-      );
+      logger.error({ group: group.name, error: output.error }, 'Agent error');
       return 'error';
     }
 
@@ -327,106 +166,222 @@ async function runAgent(
   }
 }
 
+// Create queue
+const queue = new GroupQueue();
+
+async function processMessages(chatJid: string): Promise<boolean> {
+  const group = registeredGroups[chatJid];
+  if (!group) return false;
+
+  const sinceTimestamp = lastAgentTimestamp[chatJid] || '';
+  const messages = getMessagesSince(chatJid, sinceTimestamp, ASSISTANT_NAME);
+
+  if (messages.length === 0) return true;
+
+  const prompt = formatMessages(messages);
+
+  // Update last timestamp BEFORE running to avoid loops on failure
+  const newest = messages[messages.length - 1].timestamp;
+  lastAgentTimestamp[chatJid] = newest;
+  setRouterState(chatJid, newest);
+
+  const result = await runAgent(chatJid, prompt, async (output) => {
+    if (output.result) {
+      await sendFn(chatJid, output.result);
+    }
+    if (output.status === 'success') {
+      queue.notifyIdle(chatJid);
+    }
+  });
+
+  return result === 'success';
+}
+
+queue.setProcessMessagesFn(processMessages);
+
+export function getAvailableGroups(): AvailableGroup[] {
+  const allChats = getAllChats();
+  return allChats.map((chat) => ({
+    jid: chat.jid,
+    name: chat.name || chat.jid,
+    lastActivity: chat.last_message_time,
+    isRegistered: !!registeredGroups[chat.jid],
+  }));
+}
+
+/** @internal - for tests only. */
+export function _setRegisteredGroups(groups: Record<string, RegisteredGroup>): void {
+  registeredGroups = groups;
+}
+
+function registerGroup(jid: string, group: RegisteredGroup): void {
+  // Use DB helper to persist registration
+  setRegisteredGroup(jid, group);
+  // Update local cache
+  registeredGroups[jid] = group;
+  logger.info({ jid, folder: group.folder }, 'Group registered');
+}
+
+async function runPhysicalAgent(
+  group: RegisteredGroup,
+  input: {
+    prompt: string;
+    sessionId?: string;
+    chatJid: string;
+    isMain: boolean;
+  },
+  onOutput?: (output: ContainerOutput) => Promise<void>,
+): Promise<ContainerOutput> {
+  const workspace = new AcWorkspace({
+    id: group.folder,
+    name: group.name,
+  });
+  await workspace.init();
+
+  const secrets = readSecrets();
+
+  // Setup IPC input dir for physical agent
+  const ipcInputDir = path.join(workspace.rootDir, 'ipc', 'input');
+  fs.mkdirSync(ipcInputDir, { recursive: true });
+
+  const agentRunnerDir = path.resolve(process.cwd(), 'container/agent-runner');
+
+  // We need to ensure agent-runner is built
+  if (!fs.existsSync(path.join(agentRunnerDir, 'dist/index.js'))) {
+    throw new Error(
+      'agent-runner not built. Run pnpm --filter agent-runner build',
+    );
+  }
+
+  const bridge = new TmuxBridge(group.folder, async (data) => {
+    if (onOutput && data.includes('---AQUACLAW_OUTPUT_START---')) {
+      const parts = data.split('---AQUACLAW_OUTPUT_START---');
+      for (const part of parts) {
+        if (part.includes('---AQUACLAW_OUTPUT_END---')) {
+          const jsonStr = part.split('---AQUACLAW_OUTPUT_END---')[0].trim();
+          try {
+            const output = JSON.parse(jsonStr);
+            await onOutput(output);
+          } catch (err) {
+            // ignore parse errors for partial data
+          }
+        }
+      }
+    }
+  });
+
+  const command = `cd ${agentRunnerDir} && node dist/index.js`;
+  await bridge.createSession(workspace.rootDir, command);
+
+  const inputStr = JSON.stringify({
+    ...input,
+    groupFolder: workspace.rootDir,
+    assistantName: ASSISTANT_NAME,
+    secrets: secrets,
+  });
+
+  const tempInput = path.join(workspace.rootDir, 'input.json');
+  fs.writeFileSync(tempInput, inputStr);
+
+  // Send keys to tmux session to pipe the input file to the agent-runner
+  await bridge.sendKeys(`cat ${tempInput} | node dist/index.js`);
+
+  return { status: 'success', result: 'Physical session started in tmux' };
+}
+
 async function startMessageLoop(): Promise<void> {
   if (messageLoopRunning) {
     logger.debug('Message loop already running, skipping duplicate start');
     return;
   }
   messageLoopRunning = true;
+  logger.debug('Starting message loop');
 
-  logger.info(`AquaClaw running (trigger: @${ASSISTANT_NAME})`);
-
-  while (true) {
+  while (messageLoopRunning) {
     try {
       const jids = Object.keys(registeredGroups);
-      const { messages, newTimestamp } = getNewMessages(
+      // Sort to find the most recent seen message
+      const lastGlobalTs =
+        Object.values(lastAgentTimestamp).sort().reverse()[0] || '';
+
+      const { messages } = getNewMessages(
         jids,
-        lastTimestamp,
+        lastGlobalTs,
         ASSISTANT_NAME,
       );
 
-      if (messages.length > 0) {
-        logger.info({ count: messages.length }, 'New messages');
+      for (const msg of messages) {
+        const chatJid = msg.chat_jid;
+        const group = registeredGroups[chatJid];
 
-        // Advance the "seen" cursor for all messages immediately
-        lastTimestamp = newTimestamp;
-        saveState();
-
-        // Deduplicate by group
-        const messagesByGroup = new Map<string, NewMessage[]>();
-        for (const msg of messages) {
-          const existing = messagesByGroup.get(msg.chat_jid);
-          if (existing) {
-            existing.push(msg);
-          } else {
-            messagesByGroup.set(msg.chat_jid, [msg]);
-          }
+        if (!group) {
+          logger.debug({ chatJid }, 'Skipping message from unregistered group');
+          continue;
         }
 
-        for (const [chatJid, groupMessages] of messagesByGroup) {
-          const group = registeredGroups[chatJid];
-          if (!group) continue;
+        // Track last seen timestamp to avoid re-processing on restart
+        if (
+          !lastAgentTimestamp[chatJid] ||
+          msg.timestamp > lastAgentTimestamp[chatJid]
+        ) {
+          lastAgentTimestamp[chatJid] = msg.timestamp;
+        }
 
-          const channel = findChannel(channels, chatJid);
-          if (!channel) {
-            logger.warn({ chatJid }, 'No channel owns JID, skipping messages');
-            continue;
-          }
+        if (msg.is_from_me) continue;
 
-          const isMainGroup = group.isMain === true;
-          const needsTrigger = !isMainGroup && group.requiresTrigger !== false;
-
-          // For non-main groups, only act on trigger messages.
-          // Non-trigger messages accumulate in DB and get pulled as
-          // context when a trigger eventually arrives.
-          if (needsTrigger) {
-            const hasTrigger = groupMessages.some((m) =>
-              TRIGGER_PATTERN.test(m.content.trim()),
-            );
-            if (!hasTrigger) continue;
-          }
-
-          // Pull all messages since lastAgentTimestamp so non-trigger
-          // context that accumulated between triggers is included.
-          const allPending = getMessagesSince(
-            chatJid,
-            lastAgentTimestamp[chatJid] || '',
-            ASSISTANT_NAME,
+        // Trigger logic
+        const triggerMatch = TRIGGER_PATTERN.test(msg.content);
+        if (group.isMain || !group.requiresTrigger || triggerMatch) {
+          logger.info(
+            { chatJid, sender: msg.sender_name },
+            'Enqueuing agent request',
           );
-          const messagesToSend =
-            allPending.length > 0 ? allPending : groupMessages;
-          const formatted = formatMessages(messagesToSend);
-
-          if (queue.sendMessage(chatJid, formatted)) {
-            logger.debug(
-              { chatJid, count: messagesToSend.length },
-              'Piped messages to active container',
-            );
-            lastAgentTimestamp[chatJid] =
-              messagesToSend[messagesToSend.length - 1].timestamp;
-            saveState();
-            // Show typing indicator while the container processes the piped message
-            channel
-              .setTyping?.(chatJid, true)
-              ?.catch((err) =>
-                logger.warn({ chatJid, err }, 'Failed to set typing indicator'),
-              );
-          } else {
-            // No active container — enqueue for a new one
-            queue.enqueueMessageCheck(chatJid);
-          }
+          queue.enqueueMessageCheck(chatJid);
         }
       }
     } catch (err) {
       logger.error({ err }, 'Error in message loop');
     }
-    await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL));
+    await new Promise((r) => setTimeout(r, POLL_INTERVAL));
   }
 }
 
+function loadState(): void {
+  // Load registered groups
+  const groups = getAllRegisteredGroups();
+  for (const [jid, group] of Object.entries(groups)) {
+    registeredGroups[jid] = group;
+  }
+  logger.info({ count: Object.keys(registeredGroups).length }, 'Groups loaded');
+
+  // Load sessions
+  const dbSessions = getAllSessions();
+  for (const [folder, sessionId] of Object.entries(dbSessions)) {
+    sessions[folder] = sessionId;
+  }
+  logger.info({ count: Object.keys(sessions).length }, 'Sessions loaded');
+
+  // Load router state (last seen timestamps)
+  for (const jid of Object.keys(registeredGroups)) {
+    const timestamp = getRouterState(jid);
+    if (timestamp) {
+      lastAgentTimestamp[jid] = timestamp;
+    }
+  }
+}
+
+function handleChatMetadata(
+  chatJid: string,
+  timestamp: string,
+  name?: string,
+  channel?: string,
+  isGroup?: boolean,
+): void {
+  storeChatMetadata(chatJid, timestamp, name, channel, isGroup);
+}
+
 /**
- * Startup recovery: check for unprocessed messages in registered groups.
- * Handles crash between advancing lastTimestamp and processing messages.
+ * Check for messages that arrived while AquaClaw was offline.
  */
 function recoverPendingMessages(): void {
   for (const [chatJid, group] of Object.entries(registeredGroups)) {
@@ -442,10 +397,17 @@ function recoverPendingMessages(): void {
   }
 }
 
+let isContainerRuntimeAvailable = false;
+
 function ensureContainerSystemRunning(): void {
-  ensureContainerRuntimeRunning();
-  cleanupOrphans();
+  isContainerRuntimeAvailable = ensureContainerRuntimeRunning();
+  if (isContainerRuntimeAvailable) {
+    cleanupOrphans();
+  }
 }
+
+// Global send function for use in processMessages
+let sendFn: (jid: string, text: string) => Promise<void>;
 
 async function main(): Promise<void> {
   ensureContainerSystemRunning();
@@ -453,18 +415,8 @@ async function main(): Promise<void> {
   logger.info('Database initialized');
   loadState();
 
-  // Graceful shutdown handlers
-  const shutdown = async (signal: string) => {
-    logger.info({ signal }, 'Shutdown signal received');
-    await queue.shutdown(10000);
-    for (const ch of channels) await ch.disconnect();
-    process.exit(0);
-  };
-  process.on('SIGTERM', () => shutdown('SIGTERM'));
-  process.on('SIGINT', () => shutdown('SIGINT'));
-
   // Channel callbacks (shared by all channels)
-  const channelOpts = {
+  const channelOpts: ChannelOpts = {
     onMessage: (_chatJid: string, msg: NewMessage) => storeMessage(msg),
     onChatMetadata: (
       chatJid: string,
@@ -472,78 +424,61 @@ async function main(): Promise<void> {
       name?: string,
       channel?: string,
       isGroup?: boolean,
-    ) => storeChatMetadata(chatJid, timestamp, name, channel, isGroup),
+    ) => handleChatMetadata(chatJid, timestamp, name, channel, isGroup),
     registeredGroups: () => registeredGroups,
     onGroupRegistered: (jid: string, group: RegisteredGroup) =>
       registerGroup(jid, group),
   };
 
-  // Create and connect all registered channels.
-  // Each channel self-registers via the barrel import above.
-  // Factories return null when credentials are missing, so unconfigured channels are skipped.
-  for (const channelName of getRegisteredChannelNames()) {
-    const factory = getChannelFactory(channelName)!;
-    const channel = factory(channelOpts);
-    if (!channel) {
-      logger.warn(
-        { channel: channelName },
-        'Channel installed but credentials missing — skipping. Check .env or re-run the channel skill.',
-      );
-      continue;
+  const channels: Channel[] = [];
+  const registeredChannelNames = getRegisteredChannelNames();
+  for (const name of registeredChannelNames) {
+    const factory = getChannelFactory(name);
+    if (factory) {
+      const channel = factory(channelOpts as any);
+      if (channel) {
+        logger.info({ channel: name }, 'Connecting channel');
+        await channel.connect();
+        channels.push(channel);
+      }
     }
-    channels.push(channel);
-    await channel.connect();
-  }
-  if (channels.length === 0) {
-    logger.fatal('No channels connected');
-    process.exit(1);
   }
 
-  // Start subsystems (independently of connection handler)
+  // Define global sendFn
+  sendFn = async (jid: string, text: string) => {
+    await routeOutbound(channels, jid, text);
+    const ts = new Date().toISOString();
+    lastAgentTimestamp[jid] = ts;
+    setRouterState(jid, ts);
+  };
+
+  // Initial recovery and start loop
+  recoverPendingMessages();
+  startMessageLoop();
+
   startSchedulerLoop({
     registeredGroups: () => registeredGroups,
     getSessions: () => sessions,
     queue,
-    onProcess: (groupJid, proc, containerName, groupFolder) =>
-      queue.registerProcess(groupJid, proc, containerName, groupFolder),
-    sendMessage: async (jid, rawText) => {
-      const channel = findChannel(channels, jid);
-      if (!channel) {
-        logger.warn({ jid }, 'No channel owns JID, cannot send message');
-        return;
-      }
-      const text = formatOutbound(rawText);
-      if (text) await channel.sendMessage(jid, text);
-    },
+    onProcess: (chatJid, proc, containerName, groupFolder) =>
+      queue.registerProcess(chatJid, proc, containerName, groupFolder),
+    sendMessage: sendFn,
   });
-  startIpcWatcher({
-    sendMessage: (jid, text) => {
-      const channel = findChannel(channels, jid);
-      if (!channel) throw new Error(`No channel for JID: ${jid}`);
-      return channel.sendMessage(jid, text);
-    },
-    registeredGroups: () => registeredGroups,
-    registerGroup,
-    syncGroups: async (force: boolean) => {
-      await Promise.all(
-        channels
-          .filter((ch) => ch.syncGroups)
-          .map((ch) => ch.syncGroups!(force)),
-      );
-    },
-    getAvailableGroups,
-    writeGroupsSnapshot: (gf, im, ag, rj) =>
-      writeGroupsSnapshot(gf, im, ag, rj),
-  });
-  queue.setProcessMessagesFn(processGroupMessages);
-  recoverPendingMessages();
-  startMessageLoop().catch((err) => {
-    logger.fatal({ err }, 'Message loop crashed unexpectedly');
-    process.exit(1);
-  });
+
+  // Graceful shutdown handlers
+  const shutdown = async (signal: string) => {
+    logger.info({ signal }, 'Shutdown signal received');
+    await queue.shutdown(10000);
+    for (const ch of channels) await ch.disconnect();
+    messageLoopRunning = false;
+    process.exit(0);
+  };
+  process.on('SIGINT', () => shutdown('SIGINT'));
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+
+  logger.info(`AquaClaw running (trigger: @${ASSISTANT_NAME})`);
 }
 
-// Guard: only run when executed directly, not when imported by tests
 const isDirectRun =
   process.argv[1] &&
   new URL(import.meta.url).pathname ===
