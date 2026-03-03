@@ -246,6 +246,9 @@ async function runPhysicalAgent(
         '📸 New Snapshot',
       );
     },
+    onSummary: async (summary) => {
+      await sendFn(input.chatJid, `📝 **Delta Feed:** ${summary}`);
+    },
   });
   await workspace.init();
 

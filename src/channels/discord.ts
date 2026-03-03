@@ -239,6 +239,9 @@ export class DiscordChannel implements Channel {
         onFileAdded: async (filePath) => {
           await this.sendFile(threadJid, filePath, '📸 New Snapshot');
         },
+        onSummary: async (summary) => {
+          await this.sendMessage(threadJid, `📝 **Delta Feed:** ${summary}`);
+        },
       });
       await workspace.init();
 
@@ -309,7 +312,11 @@ export class DiscordChannel implements Channel {
     }
   }
 
-  async sendFile(jid: string, filePath: string, caption?: string): Promise<void> {
+  async sendFile(
+    jid: string,
+    filePath: string,
+    caption?: string,
+  ): Promise<void> {
     if (!this.client) {
       logger.warn('Discord client not initialized');
       return;

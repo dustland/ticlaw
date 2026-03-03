@@ -19,6 +19,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@google/generative-ai": "^0.24.1",
     "better-sqlite3": "^11.8.1",
     "chokidar": "^5.0.0",
     "cron-parser": "^5.5.0",

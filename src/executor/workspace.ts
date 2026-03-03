@@ -3,6 +3,7 @@ import path from 'path';
 import os from 'os';
 import { logger } from '../logger.js';
 import chokidar, { FSWatcher } from 'chokidar';
+import { DiffSummarizer } from './diff-summarizer.js';
 
 const HOME_DIR = os.homedir();
 export const FACTORY_DIR = path.join(HOME_DIR, 'aquaclaw', 'factory');
@@ -12,6 +13,7 @@ export interface WorkspaceConfig {
   name: string;
   githubUrl?: string;
   onFileAdded?: (filePath: string) => Promise<void>;
+  onSummary?: (summary: string) => Promise<void>;
 }
 
 export class PortLocker {
@@ -31,11 +33,15 @@ export class AcWorkspace {
   public rootDir: string;
   public screenshotsDir: string;
   private watcher: FSWatcher | null = null;
+  private summarizer: DiffSummarizer;
+  private lastSummaryTime = 0;
+  private summaryThrottleMs = 60000; // 1 minute throttle
 
   constructor(config: WorkspaceConfig) {
     this.config = config;
     this.rootDir = path.join(FACTORY_DIR, config.id);
     this.screenshotsDir = path.join(this.rootDir, 'screenshots');
+    this.summarizer = new DiffSummarizer();
   }
 
   async init(): Promise<void> {
@@ -58,28 +64,62 @@ export class AcWorkspace {
     // Create logs directory
     fs.mkdirSync(path.join(this.rootDir, 'logs'), { recursive: true });
 
-    // Start watching for screenshots
+    // Start watching for screenshots and code changes
     this.startWatcher();
   }
 
   private startWatcher(): void {
     if (this.watcher) return;
 
-    this.watcher = chokidar.watch(this.screenshotsDir, {
+    // Watch both screenshots and the root for code changes
+    // We ignore node_modules, .git, and common build artifacts
+    this.watcher = chokidar.watch([this.rootDir], {
       ignoreInitial: true,
       persistent: true,
+      ignored: [
+        '**/node_modules/**',
+        '**/.git/**',
+        '**/dist/**',
+        '**/logs/**',
+        '**/pnpm-lock.yaml',
+      ],
     });
 
     this.watcher.on('add', async (filePath: string) => {
-      logger.info({ filePath }, 'New screenshot detected');
-      if (this.config.onFileAdded) {
-        try {
-          await this.config.onFileAdded(filePath);
-        } catch (err) {
-          logger.error({ err, filePath }, 'Failed to handle added file');
+      if (filePath.startsWith(this.screenshotsDir)) {
+        logger.info({ filePath }, 'New screenshot detected');
+        if (this.config.onFileAdded) {
+          try {
+            await this.config.onFileAdded(filePath);
+          } catch (err) {
+            logger.error({ err, filePath }, 'Failed to handle added file');
+          }
         }
+      } else {
+        // Code file added
+        this.triggerSummary();
       }
     });
+
+    this.watcher.on('change', (filePath: string) => {
+      if (!filePath.startsWith(this.screenshotsDir)) {
+        this.triggerSummary();
+      }
+    });
+  }
+
+  private async triggerSummary(): Promise<void> {
+    const now = Date.now();
+    if (now - this.lastSummaryTime < this.summaryThrottleMs) return;
+    this.lastSummaryTime = now;
+
+    if (this.config.onSummary) {
+      logger.info({ dir: this.rootDir }, 'Triggering diff summary');
+      const summary = await this.summarizer.summarize(this.rootDir);
+      if (summary) {
+        await this.config.onSummary(summary);
+      }
+    }
   }
 
   async stop(): Promise<void> {
