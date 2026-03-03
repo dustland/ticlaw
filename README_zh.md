@@ -41,9 +41,28 @@ npm install
 npm start
 ```
 
-完整安装指南请见 [docs/SETUP.md](docs/SETUP.md)。
+## 我们为什么构建 AquaClaw
 
-## 🏗 架构
+AquaClaw 扩展了 [Nanoclaw](https://github.com/qwibitai/NanoClaw) 的设计哲学，为专业的 AI 开发提供真实的隔离和工业级的监控。Nanoclaw 专注于轻量级个人智能体，而 AquaClaw 则针对团队环境进行了优化，在这种环境下，透明度和可靠性是不可逾越的底线。
+
+## 设计哲学
+
+**默认透明：** 每一个 Shell 命令和日志都是实时流式传输的。不存在 AI 的“黑盒”操作。
+
+**物理优于虚拟：** 虽然我们支持容器隔离，但在研发中我们更倾向于物理目录隔离，以确保原生性能，并能在需要时（例如 TiCOS 开发）完全访问系统级工具（GPU、Keychain 等）。
+
+**为 TiCOS 生态而生：** AquaClaw 不仅仅是一个通用的机器人；它是 Tiwater 自主研发的核心引擎，原生支持我们特定的 CI/CD 和验证管道。
+
+**定制即代码修改：** 无配置泛滥。如果你需要不同的行为，直接修改 AquaClaw 引擎代码。
+
+## 系统要求
+
+- macOS (专为 Mac Mini 优化) 或 Linux
+- Node.js 20+
+- [Claude Code](https://claude.ai/download)
+- [Discord 机器人 Token](https://discord.com/developers/applications)
+
+## 架构
 
 AquaClaw 运行在 **指挥 -> 工厂 -> 中继** 的循环中：
 
@@ -53,18 +72,24 @@ AquaClaw 运行在 **指挥 -> 工厂 -> 中继** 的循环中：
 4.  **验证:** Playwright 运行自动化 UI 测试。
 5.  **交付:** PR 提交至 GitHub。
 
-详细的设计决策记录在 [docs/design/](docs/design/)。
+## 常见问题
 
-## 📜 哲学：“短小精悍，自主运行”
+**为什么要用 Tmux 而不仅仅是容器？**
 
-- **无配置泛滥:** 我们使用代码级定制。如果你需要新行为，直接修改引擎。
-- **透明即安全:** 你可以通过 Discord/Tmux 桥接实时查看运行的每一条命令。
-- **物理优于虚拟:** 虽然我们支持容器，但在研发中我们更倾向于物理隔离，以避免 macOS 上的“容器套容器”工具链难题。
+Tmux 允许持久化会话，可以手动挂载进行调试。它提供了纯容器日志有时会缺失的可观测性，特别是对于交互式 CLI 工具。
 
-## 🤝 贡献
+**这安全吗？**
 
-我们沿用了来自 Nanoclaw 的 **基于技能（Skill-based）的贡献** 模型。详情请见 [CONTRIBUTING.md](CONTRIBUTING.md)。
+AquaClaw 使用物理隔离和端口锁定。然而，它是为受控的研发环境设计的。请始终审查代码更改，并使用专用的开发机器（如 Mac Mini）。
 
----
+**我可以用于其他项目吗？**
 
-**AquaClaw** 是 Tiwater 的项目。为 TiCOS 的未来倾情打造 ❤️。
+当然！虽然针对 TiCOS 进行了优化，但 AquaClaw 的 `/pincer` 和工厂逻辑适用于任何托管在 GitHub 上的项目。
+
+## 致谢 (Credits)
+
+AquaClaw 自豪地构建在 **[Nanoclaw](https://github.com/qwibitai/NanoClaw)** 的基础之上。我们保留了 Nanoclaw 核心的消息路由和任务调度逻辑，同时通过研发特定的功能对其进行了扩展。
+
+## 许可证
+
+MIT
