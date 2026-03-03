@@ -1,6 +1,6 @@
 # 🦀 AquaClaw (雪蟹) Phase-by-Phase Work Plan
 
-This document serves as the master execution plan for converting Nanoclaw into AquaClaw.
+This document serves as the master execution plan for converting NanoClaw into AquaClaw.
 
 ---
 

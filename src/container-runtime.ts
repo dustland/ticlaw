@@ -32,7 +32,9 @@ export function ensureContainerRuntimeRunning(): boolean {
     logger.debug('Container runtime already running');
     return true;
   } catch (err) {
-    logger.warn('Container runtime not available. AquaClaw will attempt to use physical workspace fallback.');
+    logger.warn(
+      'Container runtime not available. AquaClaw will attempt to use physical workspace fallback.',
+    );
     return false;
   }
 }

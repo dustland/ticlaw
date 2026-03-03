@@ -40,7 +40,7 @@ import {
 } from './db.js';
 import { GroupQueue } from './group-queue.js';
 import { logger } from './logger.js';
-import { routeOutbound, formatMessages } from './router.js';
+import { routeOutbound, routeOutboundFile, formatMessages } from './router.js';
 import { startSchedulerLoop } from './task-scheduler.js';
 import {
   AvailableGroup,
@@ -69,6 +69,7 @@ export interface ChannelOpts {
 let registeredGroups: Record<string, RegisteredGroup> = {};
 const sessions: Record<string, string> = {}; // folder -> sessionId
 const lastAgentTimestamp: Record<string, string> = {}; // chatJid -> iso
+const channels: Channel[] = [];
 let messageLoopRunning = false;
 
 // Forward declaration for recursion
@@ -210,7 +211,9 @@ export function getAvailableGroups(): AvailableGroup[] {
 }
 
 /** @internal - for tests only. */
-export function _setRegisteredGroups(groups: Record<string, RegisteredGroup>): void {
+export function _setRegisteredGroups(
+  groups: Record<string, RegisteredGroup>,
+): void {
   registeredGroups = groups;
 }
 
@@ -235,6 +238,14 @@ async function runPhysicalAgent(
   const workspace = new AcWorkspace({
     id: group.folder,
     name: group.name,
+    onFileAdded: async (filePath) => {
+      await routeOutboundFile(
+        channels,
+        input.chatJid,
+        filePath,
+        '📸 New Snapshot',
+      );
+    },
   });
   await workspace.init();
 
@@ -304,11 +315,7 @@ async function startMessageLoop(): Promise<void> {
       const lastGlobalTs =
         Object.values(lastAgentTimestamp).sort().reverse()[0] || '';
 
-      const { messages } = getNewMessages(
-        jids,
-        lastGlobalTs,
-        ASSISTANT_NAME,
-      );
+      const { messages } = getNewMessages(jids, lastGlobalTs, ASSISTANT_NAME);
 
       for (const msg of messages) {
         const chatJid = msg.chat_jid;
@@ -430,7 +437,6 @@ async function main(): Promise<void> {
       registerGroup(jid, group),
   };
 
-  const channels: Channel[] = [];
   const registeredChannelNames = getRegisteredChannelNames();
   for (const name of registeredChannelNames) {
     const factory = getChannelFactory(name);

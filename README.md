@@ -5,23 +5,22 @@
 </p>
 
 <p align="center">
-  <b>A Distributed AI R&D Engine for TiCOS.</b><br>
+  <b>A Distributed AI R&D Engine for Engineering Teams.</b><br>
   Physically isolated, multi-channel commanded, and production-ready.
 </p>
 
 <p align="center">
-  Forked from <a href="https://github.com/qwibitai/NanoClaw">Nanoclaw</a>
+  Forked from <a href="https://github.com/qwibitai/nanoclaw">NanoClaw</a>
 </p>
 
-AquaClaw is a specialized evolution of Nanoclaw, redesigned to serve as the primary autonomous development engine for **TiCOS**. It transforms a Mac Mini (or any persistent host) into a 24/7 AI collaborator that bridges high-level requirements from Discord into physical code changes with industrial-grade monitoring.
+AquaClaw is a specialized evolution of NanoClaw, redesigned to serve as the primary autonomous development engine for **Engineering Teams**. It transforms a Mac Mini (or any persistent host) into a 24/7 AI collaborator that bridges high-level requirements from Discord into physical code changes with industrial-grade monitoring.
 
 ## 🌊 The Vision
 
-While Nanoclaw was built for personal assistance, **AquaClaw** is built for **Engineering Teams**. It focuses on:
+While NanoClaw was built for personal assistance, **AquaClaw** is built for **Engineering Teams**. It focuses on:
 - **Physical Workspace Isolation:** Every task gets its own physical directory "factory" and dedicated environment.
 - **Discord-First Command & Control:** High-fidelity debugging, streaming logs, and thread-locked task management via Discord.
 - **Deep Observability:** Automated snapshots, smart diff summaries, and Playwright-backed UI verification.
-- **TiCOS Integration:** Native support for TiCOS development workflows and PR automation.
 
 ## 🛠 Core Capabilities
 
@@ -34,24 +33,22 @@ While Nanoclaw was built for personal assistance, **AquaClaw** is built for **En
 ## 🚀 Quick Start (Development Mode)
 
 ```bash
-git clone https://github.com/tiwater/aquaclaw.git
+git clone https://github.com/dustland/aquaclaw.git
 cd aquaclaw
-npm install
+pnpm install
 # Setup environment variables in .env (AC_DISCORD_TOKEN, AC_GEMINI_API_KEY, etc.)
-npm start
+pnpm start
 ```
 
 ## Why We Built AquaClaw
 
-AquaClaw extends the philosophy of [Nanoclaw](https://github.com/qwibitai/NanoClaw) by providing true isolation and industrial monitoring for professional AI development. While Nanoclaw focused on lightweight personal agents, AquaClaw is optimized for team environments where transparency and reliability are non-negotiable.
+AquaClaw extends the philosophy of [NanoClaw](https://github.com/qwibitai/nanoclaw) by providing true isolation and industrial monitoring for professional AI development. While NanoClaw focused on lightweight personal agents, AquaClaw is optimized for team environments where transparency and reliability are non-negotiable.
 
 ## Philosophy
 
 **Transparent by Default.** Every shell command and log is streamed in real-time. No "black box" AI actions.
 
-**Physical over Virtual.** While we support container isolation, AquaClaw prefers physical directory isolation for R&D to ensure native performance and full access to system-level tools (GPU, Keychain, etc.) when needed for TiCOS.
-
-**Built for the TiCOS Ecosystem.** AquaClaw isn't just a general-purpose bot; it's the primary engine for Tiwater's autonomous R&D, with native support for our specific CI/CD and verification pipelines.
+**Physical over Virtual.** While we support container isolation, AquaClaw prefers physical directory isolation for R&D to ensure native performance and full access to system-level tools (GPU, Keychain, etc.) when needed.
 
 **Customization = code changes.** No configuration sprawl. If you want different behavior, you modify the AquaClaw engine directly.
 
@@ -82,10 +79,6 @@ Tmux allows for persistent sessions that can be manually attached for debugging.
 
 AquaClaw uses physical isolation and port-locking. However, it is designed for controlled R&D environments. Always review the code changes and use dedicated development machines (like a Mac Mini).
 
-**Can I use it for other projects?**
-
-Yes! While optimized for TiCOS, AquaClaw's `/pincer` and factory logic work with any GitHub-hosted project.
-
 **Can I use third-party LLM providers?**
 
 Yes! AquaClaw defaults to **OpenRouter** which provides access to Claude 3.5 Sonnet and other powerful models via an Anthropic-compatible API. You can switch to direct Anthropic or Gemini by updating your `.env` file.
@@ -101,5 +94,4 @@ AquaClaw automatically handles the routing and provider-specific mapping.
 
 ## Credits
 
-AquaClaw is proudly built on the foundation of **[Nanoclaw](https://github.com/qwibitai/NanoClaw)**. We maintain Nanoclaw's core message routing and task scheduling logic while extending it with our R&D-specific features.
-
+AquaClaw is proudly built on the foundation of **[NanoClaw](https://github.com/qwibitai/nanoclaw)**. We maintain NanoClaw's core message routing and task scheduling logic while extending it with our R&D-specific features.

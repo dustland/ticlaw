@@ -1,6 +1,6 @@
 # AquaClaw (雪蟹) Architecture Guide
 
-This document outlines the architectural decisions that differentiate AquaClaw from its parent project, Nanoclaw.
+This document outlines the architectural decisions that differentiate AquaClaw from its parent project, NanoClaw.
 
 ## 1. High-Level Design Goals
 
