@@ -135,7 +135,11 @@ export class AcWorkspace {
     logger.info({ dir: this.rootDir }, 'Creating GitHub PR');
 
     // 1. Get history for description
-    const messages = getMessagesSince(`dc:${this.config.id}`, '', ASSISTANT_NAME);
+    const messages = getMessagesSince(
+      `dc:${this.config.id}`,
+      '',
+      ASSISTANT_NAME,
+    );
     const historyText = messages
       .map((m) => `${m.sender_name}: ${m.content}`)
       .join('\n');
@@ -157,8 +161,6 @@ ${historyText.slice(-2000)}
     const prTitle = `feat: AquaClaw task - ${this.config.name}`;
 
     return new Promise((resolve) => {
-      // Use GitHub CLI to create PR
-      // --fill uses commits for title/body, but we want our custom one
       const cmd = `gh pr create --title "${prTitle}" --body "${prBody}"`;
       exec(cmd, { cwd: this.rootDir }, (err, stdout) => {
         if (err) {
@@ -171,6 +173,35 @@ ${historyText.slice(-2000)}
             this.config.onPush(prUrl);
           }
           resolve(prUrl);
+        }
+      });
+    });
+  }
+
+  async applySkill(
+    skillName: string,
+  ): Promise<{ success: boolean; error?: string }> {
+    logger.info(
+      { dir: this.rootDir, skill: skillName },
+      'Applying skill to workspace',
+    );
+
+    const projectRoot = process.cwd();
+    const skillPath = path.join(projectRoot, '.claude', 'skills', skillName);
+
+    if (!fs.existsSync(skillPath)) {
+      return { success: false, error: `Skill not found: ${skillName}` };
+    }
+
+    return new Promise((resolve) => {
+      const cmd = `pnpm dlx tsx ${path.join(projectRoot, 'scripts', 'apply-skill.ts')} ${skillPath}`;
+      exec(cmd, { cwd: this.rootDir }, (err, _stdout, stderr) => {
+        if (err) {
+          logger.error({ err, stderr, cmd }, 'Failed to apply skill');
+          resolve({ success: false, error: stderr || err.message });
+        } else {
+          logger.info({ skill: skillName }, 'Skill applied successfully');
+          resolve({ success: true });
         }
       });
     });

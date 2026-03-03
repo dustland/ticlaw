@@ -66,6 +66,7 @@ export interface ChannelOpts {
   onGroupRegistered: (jid: string, group: RegisteredGroup) => void;
   onVerify?: (chatJid: string, url: string) => Promise<void>;
   onPush?: (chatJid: string) => Promise<void>;
+  onSkill?: (chatJid: string, skillName: string) => Promise<void>;
 }
 
 // Global state
@@ -358,6 +359,25 @@ async function triggerPush(chatJid: string): Promise<void> {
   }
 }
 
+async function triggerSkill(chatJid: string, skillName: string): Promise<void> {
+  const group = registeredGroups[chatJid];
+  if (!group) return;
+
+  const workspace = activeWorkspaces.get(group.folder);
+  if (!workspace) {
+    await sendFn(chatJid, '❌ No active workspace found for this thread.');
+    return;
+  }
+
+  await sendFn(chatJid, `🛠 Applying skill: ${skillName}...`);
+  const result = await workspace.applySkill(skillName);
+  if (result.success) {
+    await sendFn(chatJid, `✅ Skill ${skillName} applied successfully.`);
+  } else {
+    await sendFn(chatJid, `❌ Failed to apply skill: ${result.error}`);
+  }
+}
+
 async function startMessageLoop(): Promise<void> {
   if (messageLoopRunning) {
     logger.debug('Message loop already running, skipping duplicate start');
@@ -487,6 +507,9 @@ async function main(): Promise<void> {
     },
     onPush: async (chatJid) => {
       await triggerPush(chatJid);
+    },
+    onSkill: async (chatJid, skillName) => {
+      await triggerSkill(chatJid, skillName);
     },
   };
 

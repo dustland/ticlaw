@@ -29,6 +29,7 @@ export interface DiscordChannelOpts extends ChannelOpts {
   onGroupRegistered?: (jid: string, group: RegisteredGroup) => void;
   onVerify?: (chatJid: string, url: string) => Promise<void>;
   onPush?: (chatJid: string) => Promise<void>;
+  onSkill?: (chatJid: string, skillName: string) => Promise<void>;
 }
 
 export class DiscordChannel implements Channel {
@@ -126,6 +127,18 @@ export class DiscordChannel implements Channel {
       if (content.startsWith('/push')) {
         if (this.opts.onPush) {
           await this.opts.onPush(chatJid);
+        }
+        return;
+      }
+
+      // Special Command: /skill
+      if (content.startsWith('/skill')) {
+        const parts = content.split(' ');
+        const skillName = parts[1];
+        if (skillName && this.opts.onSkill) {
+          await this.opts.onSkill(chatJid, skillName);
+        } else {
+          await message.reply('Usage: `/skill add-slack`');
         }
         return;
       }
