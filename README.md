@@ -21,6 +21,7 @@ While NanoClaw was built for personal assistance, **AquaClaw** is built for **En
 - **Physical Workspace Isolation:** Every task gets its own physical directory "factory" and dedicated environment.
 - **Discord-First Command & Control:** High-fidelity debugging, streaming logs, and thread-locked task management via Discord.
 - **Deep Observability:** Automated snapshots, smart diff summaries, and Playwright-backed UI verification.
+- **💻 Multi-CLI Support:** Switch between **Gemini CLI (default)**, Claude Code, and Codex depending on your team's preference or account status.
 
 ## 🛠 Core Capabilities
 
@@ -50,13 +51,15 @@ AquaClaw extends the philosophy of [NanoClaw](https://github.com/qwibitai/nanocl
 
 **Physical over Virtual.** While we support container isolation, AquaClaw prefers physical directory isolation for R&D to ensure native performance and full access to system-level tools (GPU, Keychain, etc.) when needed.
 
+**Built for the TiCOS Ecosystem.** AquaClaw isn't just a general-purpose bot; it's the primary engine for Tiwater's autonomous R&D, with native support for our specific CI/CD and verification pipelines.
+
 **Customization = code changes.** No configuration sprawl. If you want different behavior, you modify the AquaClaw engine directly.
 
 ## Requirements
 
 - macOS (optimized for Mac Mini) or Linux
 - Node.js 20+
-- [Claude Code](https://claude.ai/download)
+- [Gemini CLI](https://github.com/google/gemini-cli) (Default) or [Claude Code](https://claude.ai/download)
 - [Discord Bot Token](https://discord.com/developers/applications)
 
 ## Architecture
@@ -78,6 +81,10 @@ Tmux allows for persistent sessions that can be manually attached for debugging.
 **Is this secure?**
 
 AquaClaw uses physical isolation and port-locking. However, it is designed for controlled R&D environments. Always review the code changes and use dedicated development machines (like a Mac Mini).
+
+**Can I switch between Gemini and Claude?**
+
+Yes! Set `AC_CODING_CLI="claude"` or `AC_CODING_CLI="gemini"` in your `.env`.
 
 **Can I use third-party LLM providers?**
 

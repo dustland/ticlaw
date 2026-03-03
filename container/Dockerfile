@@ -33,8 +33,8 @@ RUN npm install -g pnpm
 ENV AGENT_BROWSER_EXECUTABLE_PATH=/usr/bin/chromium
 ENV PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium
 
-# Install agent-browser and claude-code globally
-RUN pnpm install -g agent-browser @anthropic-ai/claude-code
+# Install agent-browser, claude-code, and gemini-cli globally
+RUN pnpm install -g agent-browser @anthropic-ai/claude-code @google/gemini-cli
 
 # Create app directory
 WORKDIR /app

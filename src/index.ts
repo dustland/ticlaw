@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 
 import {
+  AC_CODING_CLI,
   ASSISTANT_NAME,
   IDLE_TIMEOUT,
   POLL_INTERVAL,
@@ -112,12 +113,12 @@ async function runAgent(
   // Wrap onOutput to track session ID from streamed results
   const wrappedOnOutput = onOutput
     ? async (output: ContainerOutput) => {
-        if (output.newSessionId) {
-          sessions[group.folder] = output.newSessionId;
-          setSession(group.folder, output.newSessionId);
-        }
-        await onOutput(output);
+      if (output.newSessionId) {
+        sessions[group.folder] = output.newSessionId;
+        setSession(group.folder, output.newSessionId);
       }
+      await onOutput(output);
+    }
     : undefined;
 
   try {
@@ -133,6 +134,7 @@ async function runAgent(
           chatJid,
           isMain,
           assistantName: ASSISTANT_NAME,
+          codingCli: AC_CODING_CLI,
         },
         (proc, containerName) =>
           queue.registerProcess(chatJid, proc, containerName, group.folder),
@@ -147,6 +149,7 @@ async function runAgent(
           sessionId,
           chatJid,
           isMain,
+          codingCli: AC_CODING_CLI,
         },
         wrappedOnOutput,
       );
@@ -234,6 +237,7 @@ async function runPhysicalAgent(
     sessionId?: string;
     chatJid: string;
     isMain: boolean;
+    codingCli?: string;
   },
   onOutput?: (output: ContainerOutput) => Promise<void>,
 ): Promise<ContainerOutput> {
@@ -477,6 +481,7 @@ async function main(): Promise<void> {
     },
   };
 
+  const CHANNEL_CONNECT_TIMEOUT = 15_000; // 15s per channel
   const registeredChannelNames = getRegisteredChannelNames();
   for (const name of registeredChannelNames) {
     const factory = getChannelFactory(name);
@@ -485,10 +490,26 @@ async function main(): Promise<void> {
       if (channel) {
         try {
           logger.info({ channel: name }, 'Connecting channel');
-          await channel.connect();
+          await Promise.race([
+            channel.connect(),
+            new Promise<never>((_, reject) =>
+              setTimeout(
+                () =>
+                  reject(
+                    new Error(
+                      `Channel ${name} connect timed out after ${CHANNEL_CONNECT_TIMEOUT / 1000}s`,
+                    ),
+                  ),
+                CHANNEL_CONNECT_TIMEOUT,
+              ),
+            ),
+          ]);
           channels.push(channel);
         } catch (err) {
-          logger.error({ channel: name, err }, 'Failed to connect channel');
+          logger.error(
+            { channel: name, err },
+            'Failed to connect channel — skipping',
+          );
         }
       }
     }
@@ -532,7 +553,7 @@ async function main(): Promise<void> {
 const isDirectRun =
   process.argv[1] &&
   new URL(import.meta.url).pathname ===
-    new URL(`file://${process.argv[1]}`).pathname;
+  new URL(`file://${process.argv[1]}`).pathname;
 
 if (isDirectRun) {
   main().catch((err) => {

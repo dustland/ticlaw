@@ -8,6 +8,7 @@ import {
   AnyThreadChannel,
 } from 'discord.js';
 import { ProxyAgent } from 'undici';
+import { HttpsProxyAgent } from 'https-proxy-agent';
 
 import { ASSISTANT_NAME, TRIGGER_PATTERN } from '../config.js';
 import { readEnvFile } from '../env.js';
@@ -56,20 +57,30 @@ export class DiscordChannel implements Channel {
       envVars.http_proxy ||
       envVars.https_proxy;
 
-    this.client = new Client({
+    const clientOptions: any = {
       intents: [
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
         GatewayIntentBits.DirectMessages,
       ],
-    });
+    };
 
     if (proxyUrl) {
-      logger.info({ proxy: proxyUrl }, 'Discord: Using proxy for connection');
-      // Discord.js v14 uses undici for REST requests
-      (this.client as any).rest.setAgent(new ProxyAgent(proxyUrl));
+      logger.info({ proxy: proxyUrl }, 'Discord: Configuring proxy for REST and Gateway');
+      
+      // Agent for REST (undici)
+      clientOptions.rest = {
+        agent: new ProxyAgent(proxyUrl)
+      };
+      
+      // Agent for Gateway (WebSocket)
+      clientOptions.ws = {
+        agent: new HttpsProxyAgent(proxyUrl)
+      };
     }
+
+    this.client = new Client(clientOptions);
 
     this.client.on(Events.MessageCreate, async (message: Message) => {
       // Ignore bot messages (including own)
