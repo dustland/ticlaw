@@ -59,22 +59,26 @@ export class AcWorkspace {
       logger.info({ dir: this.rootDir }, 'Created workspace directory');
     }
 
-    if (!fs.existsSync(this.screenshotsDir)) {
-      fs.mkdirSync(this.screenshotsDir, { recursive: true });
+    // If githubUrl is NOT provided, we initialize with metadata
+    // If it IS provided, we leave it empty so git clone works
+    if (!this.config.githubUrl) {
+      if (!fs.existsSync(this.screenshotsDir)) {
+        fs.mkdirSync(this.screenshotsDir, { recursive: true });
+      }
+
+      const claudeMdPath = path.join(this.rootDir, 'CLAUDE.md');
+      if (!fs.existsSync(claudeMdPath)) {
+        const content = `# AquaClaw Task: ${this.config.name}\n\nThis is an isolated workspace for task ${this.config.id}.\nURL: N/A\n`;
+        fs.writeFileSync(claudeMdPath, content);
+      }
+
+      const logsDir = path.join(this.rootDir, 'logs');
+      if (!fs.existsSync(logsDir)) {
+        fs.mkdirSync(logsDir, { recursive: true });
+      }
+      
+      this.startWatcher();
     }
-
-    // Initialize with a CLAUDE.md if it doesn't exist
-    const claudeMdPath = path.join(this.rootDir, 'CLAUDE.md');
-    if (!fs.existsSync(claudeMdPath)) {
-      const content = `# AquaClaw Task: ${this.config.name}\n\nThis is an isolated workspace for task ${this.config.id}.\nURL: ${this.config.githubUrl || 'N/A'}\n`;
-      fs.writeFileSync(claudeMdPath, content);
-    }
-
-    // Create logs directory
-    fs.mkdirSync(path.join(this.rootDir, 'logs'), { recursive: true });
-
-    // Start watching for screenshots and code changes
-    this.startWatcher();
   }
 
   /**
@@ -122,6 +126,18 @@ export class AcWorkspace {
           execSync(`git checkout ${this.config.branch}`, { cwd: this.rootDir });
         }
       }
+
+      // Ensure screenshots and logs exist after clone
+      if (!fs.existsSync(this.screenshotsDir)) {
+        fs.mkdirSync(this.screenshotsDir, { recursive: true });
+      }
+      const logsDir = path.join(this.rootDir, 'logs');
+      if (!fs.existsSync(logsDir)) {
+        fs.mkdirSync(logsDir, { recursive: true });
+      }
+
+      // Start watcher now that files exist
+      this.startWatcher();
 
       // 2. Granular Seeding (Monorepo Aware)
       if (this.config.githubUrl) {
