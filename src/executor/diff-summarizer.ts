@@ -8,14 +8,22 @@ export class DiffSummarizer {
   private model: any = null;
 
   constructor() {
-    const env = readEnvFile(['AC_GEMINI_API_KEY', 'GOOGLE_GENERATIVE_AI_API_KEY']);
-    const apiKey = env.AC_GEMINI_API_KEY || env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.AC_GEMINI_API_KEY;
-    
+    const env = readEnvFile([
+      'AC_GEMINI_API_KEY',
+      'GOOGLE_GENERATIVE_AI_API_KEY',
+    ]);
+    const apiKey =
+      env.AC_GEMINI_API_KEY ||
+      env.GOOGLE_GENERATIVE_AI_API_KEY ||
+      process.env.AC_GEMINI_API_KEY;
+
     if (apiKey) {
       this.genAI = new GoogleGenerativeAI(apiKey);
       this.model = this.genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
     } else {
-      logger.warn('DiffSummarizer: AC_GEMINI_API_KEY not set, summaries will be disabled');
+      logger.warn(
+        'DiffSummarizer: AC_GEMINI_API_KEY not set, summaries will be disabled',
+      );
     }
   }
 

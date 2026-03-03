@@ -4,6 +4,7 @@ import os from 'os';
 import { logger } from '../logger.js';
 import chokidar, { FSWatcher } from 'chokidar';
 import { DiffSummarizer } from './diff-summarizer.js';
+import { PlaywrightVerifier } from './playwright-verifier.js';
 
 const HOME_DIR = os.homedir();
 export const FACTORY_DIR = path.join(HOME_DIR, 'aquaclaw', 'factory');
@@ -34,6 +35,7 @@ export class AcWorkspace {
   public screenshotsDir: string;
   private watcher: FSWatcher | null = null;
   private summarizer: DiffSummarizer;
+  private verifier: PlaywrightVerifier;
   private lastSummaryTime = 0;
   private summaryThrottleMs = 60000; // 1 minute throttle
 
@@ -42,6 +44,7 @@ export class AcWorkspace {
     this.rootDir = path.join(FACTORY_DIR, config.id);
     this.screenshotsDir = path.join(this.rootDir, 'screenshots');
     this.summarizer = new DiffSummarizer();
+    this.verifier = new PlaywrightVerifier();
   }
 
   async init(): Promise<void> {
@@ -122,11 +125,17 @@ export class AcWorkspace {
     }
   }
 
+  async verify(url: string, label: string): Promise<void> {
+    logger.info({ url, label }, 'Running Playwright verification');
+    await this.verifier.captureScreenshot(url, this.screenshotsDir, label);
+  }
+
   async stop(): Promise<void> {
     if (this.watcher) {
       await this.watcher.close();
       this.watcher = null;
     }
+    await this.verifier.close();
   }
 
   async getEnv(): Promise<Record<string, string>> {

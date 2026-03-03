@@ -25,6 +25,7 @@ export interface DiscordChannelOpts extends ChannelOpts {
   onChatMetadata: OnChatMetadata;
   registeredGroups: () => Record<string, RegisteredGroup>;
   onGroupRegistered?: (jid: string, group: RegisteredGroup) => void;
+  onVerify?: (chatJid: string, url: string) => Promise<void>;
 }
 
 export class DiscordChannel implements Channel {
@@ -67,6 +68,21 @@ export class DiscordChannel implements Channel {
       // Special Command: /pincer
       if (content.startsWith('/pincer')) {
         await this.handlePincerCommand(message);
+        return;
+      }
+
+      // Special Command: /verify
+      if (content.startsWith('/verify')) {
+        const parts = content.split(' ');
+        const url = parts[1];
+        if (url && this.opts.onVerify) {
+          await message.reply(
+            `🦀 Initializing Playwright verification for ${url}...`,
+          );
+          await this.opts.onVerify(chatJid, url);
+        } else {
+          await message.reply('Usage: `/verify https://your-app-url.com`');
+        }
         return;
       }
 
@@ -312,11 +328,7 @@ export class DiscordChannel implements Channel {
     }
   }
 
-  async sendFile(
-    jid: string,
-    filePath: string,
-    caption?: string,
-  ): Promise<void> {
+  async sendFile(jid: string, filePath: string, caption?: string): Promise<void> {
     if (!this.client) {
       logger.warn('Discord client not initialized');
       return;

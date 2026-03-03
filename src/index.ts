@@ -63,6 +63,7 @@ export interface ChannelOpts {
   ) => void;
   registeredGroups: () => Record<string, RegisteredGroup>;
   onGroupRegistered: (jid: string, group: RegisteredGroup) => void;
+  onVerify?: (chatJid: string, url: string) => Promise<void>;
 }
 
 // Global state
@@ -70,6 +71,7 @@ let registeredGroups: Record<string, RegisteredGroup> = {};
 const sessions: Record<string, string> = {}; // folder -> sessionId
 const lastAgentTimestamp: Record<string, string> = {}; // chatJid -> iso
 const channels: Channel[] = [];
+const activeWorkspaces = new Map<string, AcWorkspace>(); // folder -> AcWorkspace
 let messageLoopRunning = false;
 
 // Forward declaration for recursion
@@ -235,22 +237,26 @@ async function runPhysicalAgent(
   },
   onOutput?: (output: ContainerOutput) => Promise<void>,
 ): Promise<ContainerOutput> {
-  const workspace = new AcWorkspace({
-    id: group.folder,
-    name: group.name,
-    onFileAdded: async (filePath) => {
-      await routeOutboundFile(
-        channels,
-        input.chatJid,
-        filePath,
-        '📸 New Snapshot',
-      );
-    },
-    onSummary: async (summary) => {
-      await sendFn(input.chatJid, `📝 **Delta Feed:** ${summary}`);
-    },
-  });
-  await workspace.init();
+  let workspace = activeWorkspaces.get(group.folder);
+  if (!workspace) {
+    workspace = new AcWorkspace({
+      id: group.folder,
+      name: group.name,
+      onFileAdded: async (filePath) => {
+        await routeOutboundFile(
+          channels,
+          input.chatJid,
+          filePath,
+          '📸 New Snapshot',
+        );
+      },
+      onSummary: async (summary) => {
+        await sendFn(input.chatJid, `📝 **Delta Feed:** ${summary}`);
+      },
+    });
+    await workspace.init();
+    activeWorkspaces.set(group.folder, workspace);
+  }
 
   const secrets = readSecrets();
 
@@ -301,6 +307,26 @@ async function runPhysicalAgent(
   await bridge.sendKeys(`cat ${tempInput} | node dist/index.js`);
 
   return { status: 'success', result: 'Physical session started in tmux' };
+}
+
+async function triggerVerification(chatJid: string, url: string): Promise<void> {
+  const group = registeredGroups[chatJid];
+  if (!group) return;
+
+  let workspace = activeWorkspaces.get(group.folder);
+  if (!workspace) {
+    workspace = new AcWorkspace({
+      id: group.folder,
+      name: group.name,
+      onFileAdded: async (filePath) => {
+        await routeOutboundFile(channels, chatJid, filePath, '📸 Verification Snapshot');
+      }
+    });
+    await workspace.init();
+    activeWorkspaces.set(group.folder, workspace);
+  }
+
+  await workspace.verify(url, 'manual-verify');
 }
 
 async function startMessageLoop(): Promise<void> {
@@ -438,6 +464,9 @@ async function main(): Promise<void> {
     registeredGroups: () => registeredGroups,
     onGroupRegistered: (jid: string, group: RegisteredGroup) =>
       registerGroup(jid, group),
+    onVerify: async (chatJid, url) => {
+      await triggerVerification(chatJid, url);
+    },
   };
 
   const registeredChannelNames = getRegisteredChannelNames();
