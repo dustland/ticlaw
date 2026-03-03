@@ -90,6 +90,3 @@ Yes! While optimized for TiCOS, AquaClaw's `/pincer` and factory logic work with
 
 AquaClaw is proudly built on the foundation of **[Nanoclaw](https://github.com/qwibitai/NanoClaw)**. We maintain Nanoclaw's core message routing and task scheduling logic while extending it with our R&D-specific features.
 
-## License
-
-MIT
