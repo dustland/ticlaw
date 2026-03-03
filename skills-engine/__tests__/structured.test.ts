@@ -3,7 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import {
   areRangesCompatible,
-  mergeNpmDependencies,
+  mergePnpmDependencies,
   mergeEnvAdditions,
   mergeDockerComposeServices,
 } from '../structured.js';
@@ -65,7 +65,7 @@ describe('structured', () => {
     });
   });
 
-  describe('mergeNpmDependencies', () => {
+  describe('mergePnpmDependencies', () => {
     it('adds new dependencies', () => {
       const pkgPath = path.join(tmpDir, 'package.json');
       fs.writeFileSync(
@@ -80,7 +80,7 @@ describe('structured', () => {
         ),
       );
 
-      mergeNpmDependencies(pkgPath, { newdep: '^2.0.0' });
+      mergePnpmDependencies(pkgPath, { newdep: '^2.0.0' });
 
       const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
       expect(pkg.dependencies.newdep).toBe('^2.0.0');
@@ -101,7 +101,7 @@ describe('structured', () => {
         ),
       );
 
-      mergeNpmDependencies(pkgPath, { dep: '^1.1.0' });
+      mergePnpmDependencies(pkgPath, { dep: '^1.1.0' });
 
       const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
       expect(pkg.dependencies.dep).toBe('^1.1.0');
@@ -122,7 +122,7 @@ describe('structured', () => {
         ),
       );
 
-      mergeNpmDependencies(pkgPath, { middle: '^1.0.0' });
+      mergePnpmDependencies(pkgPath, { middle: '^1.0.0' });
 
       const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
       const devKeys = Object.keys(pkg.devDependencies);
@@ -143,7 +143,7 @@ describe('structured', () => {
         ),
       );
 
-      expect(() => mergeNpmDependencies(pkgPath, { dep: '^2.0.0' })).toThrow();
+      expect(() => mergePnpmDependencies(pkgPath, { dep: '^2.0.0' })).toThrow();
     });
   });
 

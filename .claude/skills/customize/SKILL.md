@@ -91,7 +91,7 @@ Implementation:
 Always tell the user:
 ```bash
 # Rebuild and restart
-npm run build
+pnpm run build
 # macOS:
 launchctl unload ~/Library/LaunchAgents/com.aquaclaw.plist
 launchctl load ~/Library/LaunchAgents/com.aquaclaw.plist

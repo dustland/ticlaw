@@ -60,7 +60,7 @@ Run the skills engine to apply this skill's code package. The package files are 
 If `.aquaclaw/` directory doesn't exist yet:
 
 ```bash
-npx tsx scripts/apply-skill.ts --init
+pnpm dlx tsx scripts/apply-skill.ts --init
 ```
 
 Or call `initSkillsSystem()` from `skills-engine/migrate.ts`.
@@ -68,7 +68,7 @@ Or call `initSkillsSystem()` from `skills-engine/migrate.ts`.
 ### Apply the skill
 
 ```bash
-npx tsx scripts/apply-skill.ts .claude/skills/convert-to-apple-container
+pnpm dlx tsx scripts/apply-skill.ts .claude/skills/convert-to-apple-container
 ```
 
 This deterministically:
@@ -88,8 +88,8 @@ If the apply reports merge conflicts, read the intent files:
 ### Validate code changes
 
 ```bash
-npm test
-npm run build
+pnpm test
+pnpm run build
 ```
 
 All tests must pass and build must be clean before proceeding.
@@ -143,7 +143,7 @@ Expected: Both operations succeed.
 ### Full integration test
 
 ```bash
-npm run build
+pnpm run build
 launchctl kickstart -k gui/$(id -u)/com.aquaclaw
 ```
 

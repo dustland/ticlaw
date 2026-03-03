@@ -47,7 +47,7 @@ AskUserQuestion: What is your phone number? (Include country code without +, e.g
 Apply the skill to install the WhatsApp channel code and dependencies:
 
 ```bash
-npx tsx scripts/apply-skill.ts .claude/skills/add-whatsapp
+pnpm dlx tsx scripts/apply-skill.ts .claude/skills/add-whatsapp
 ```
 
 Verify the code was placed correctly:
@@ -71,7 +71,7 @@ npm install @whiskeysockets/baileys qrcode qrcode-terminal
 ### Validate build
 
 ```bash
-npm run build
+pnpm run build
 ```
 
 Build must be clean before proceeding.
@@ -89,7 +89,7 @@ rm -rf store/auth/
 For QR code in browser (recommended):
 
 ```bash
-npx tsx setup/index.ts --step whatsapp-auth -- --method qr-browser
+pnpm dlx tsx setup/index.ts --step whatsapp-auth -- --method qr-browser
 ```
 
 (Bash timeout: 150000ms)
@@ -105,10 +105,10 @@ Tell the user:
 For QR code in terminal:
 
 ```bash
-npx tsx setup/index.ts --step whatsapp-auth -- --method qr-terminal
+pnpm dlx tsx setup/index.ts --step whatsapp-auth -- --method qr-terminal
 ```
 
-Tell the user to run `npm run auth` in another terminal, then:
+Tell the user to run `pnpm run auth` in another terminal, then:
 
 > 1. Open WhatsApp > **Settings** > **Linked Devices** > **Link a Device**
 > 2. Scan the QR code displayed in the terminal
@@ -116,7 +116,7 @@ Tell the user to run `npm run auth` in another terminal, then:
 For pairing code:
 
 ```bash
-npx tsx setup/index.ts --step whatsapp-auth -- --method pairing-code --phone <their-phone-number>
+pnpm dlx tsx setup/index.ts --step whatsapp-auth -- --method pairing-code --phone <their-phone-number>
 ```
 
 (Bash timeout: 150000ms). Display PAIRING_CODE from output.
@@ -194,8 +194,8 @@ node -e "const c=JSON.parse(require('fs').readFileSync('store/auth/creds.json','
 **Group (solo, existing):** Run group sync and list available groups:
 
 ```bash
-npx tsx setup/index.ts --step groups
-npx tsx setup/index.ts --step groups --list
+pnpm dlx tsx setup/index.ts --step groups
+pnpm dlx tsx setup/index.ts --step groups --list
 ```
 
 The output shows `JID|GroupName` pairs. Present candidates as AskUserQuestion (names only, not JIDs).
@@ -203,7 +203,7 @@ The output shows `JID|GroupName` pairs. Present candidates as AskUserQuestion (n
 ### Register the chat
 
 ```bash
-npx tsx setup/index.ts --step register \
+pnpm dlx tsx setup/index.ts --step register \
   --jid "<jid>" \
   --name "<chat-name>" \
   --trigger "@<trigger>" \
@@ -217,7 +217,7 @@ npx tsx setup/index.ts --step register \
 For additional groups (trigger-required):
 
 ```bash
-npx tsx setup/index.ts --step register \
+pnpm dlx tsx setup/index.ts --step register \
   --jid "<group-jid>" \
   --name "<group-name>" \
   --trigger "@<trigger>" \
@@ -230,7 +230,7 @@ npx tsx setup/index.ts --step register \
 ### Build and restart
 
 ```bash
-npm run build
+pnpm run build
 ```
 
 Restart the service:
@@ -269,7 +269,7 @@ tail -f logs/aquaclaw.log
 QR codes expire after ~60 seconds. Re-run the auth command:
 
 ```bash
-rm -rf store/auth/ && npx tsx src/whatsapp-auth.ts
+rm -rf store/auth/ && pnpm dlx tsx src/whatsapp-auth.ts
 ```
 
 ### Pairing code not working
@@ -277,7 +277,7 @@ rm -rf store/auth/ && npx tsx src/whatsapp-auth.ts
 Codes expire in ~60 seconds. To retry:
 
 ```bash
-rm -rf store/auth/ && npx tsx src/whatsapp-auth.ts --pairing-code --phone <phone>
+rm -rf store/auth/ && pnpm dlx tsx src/whatsapp-auth.ts --pairing-code --phone <phone>
 ```
 
 Enter the code **immediately** when it appears. Also ensure:
@@ -288,7 +288,7 @@ Enter the code **immediately** when it appears. Also ensure:
 If pairing code keeps failing, switch to QR-browser auth instead:
 
 ```bash
-rm -rf store/auth/ && npx tsx setup/index.ts --step whatsapp-auth -- --method qr-browser
+rm -rf store/auth/ && pnpm dlx tsx setup/index.ts --step whatsapp-auth -- --method qr-browser
 ```
 
 ### "conflict" disconnection
@@ -313,25 +313,25 @@ Check:
 Run group metadata sync:
 
 ```bash
-npx tsx setup/index.ts --step groups
+pnpm dlx tsx setup/index.ts --step groups
 ```
 
 This fetches all group names from WhatsApp. Runs automatically every 24 hours.
 
 ## After Setup
 
-If running `npm run dev` while the service is active:
+If running `pnpm run dev` while the service is active:
 
 ```bash
 # macOS:
 launchctl unload ~/Library/LaunchAgents/com.aquaclaw.plist
-npm run dev
+pnpm run dev
 # When done testing:
 launchctl load ~/Library/LaunchAgents/com.aquaclaw.plist
 
 # Linux:
 # systemctl --user stop aquaclaw
-# npm run dev
+# pnpm run dev
 # systemctl --user start aquaclaw
 ```
 
@@ -342,4 +342,4 @@ To remove WhatsApp integration:
 1. Delete auth credentials: `rm -rf store/auth/`
 2. Remove WhatsApp registrations: `sqlite3 store/messages.db "DELETE FROM registered_groups WHERE jid LIKE '%@g.us' OR jid LIKE '%@s.whatsapp.net'"`
 3. Sync env: `mkdir -p data/env && cp .env data/env/env`
-4. Rebuild and restart: `npm run build && launchctl kickstart -k gui/$(id -u)/com.aquaclaw` (macOS) or `npm run build && systemctl --user restart aquaclaw` (Linux)
+4. Rebuild and restart: `pnpm run build && launchctl kickstart -k gui/$(id -u)/com.aquaclaw` (macOS) or `pnpm run build && systemctl --user restart aquaclaw` (Linux)

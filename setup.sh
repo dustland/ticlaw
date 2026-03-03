@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # setup.sh — Bootstrap script for AquaClaw
-# Handles Node.js/npm setup, then hands off to the Node.js setup modules.
+# Handles Node.js/pnpm setup, then hands off to the Node.js setup modules.
 # This is the only bash script in the setup flow.
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -59,38 +59,36 @@ check_node() {
   fi
 }
 
-# --- npm install ---
+# --- pnpm install ---
 
 install_deps() {
   DEPS_OK="false"
   NATIVE_OK="false"
 
   if [ "$NODE_OK" = "false" ]; then
-    log "Skipping npm install — Node not available"
+    log "Skipping pnpm install — Node not available"
     return
+  fi
+
+  if ! command -v pnpm >/dev/null 2>&1; then
+    log "pnpm not found, installing it globally via npm"
+    npm install -g pnpm >> "$LOG_FILE" 2>&1 || true
   fi
 
   cd "$PROJECT_ROOT"
 
-  # npm install with --unsafe-perm if root (needed for native modules)
-  local npm_flags=""
-  if [ "$IS_ROOT" = "true" ]; then
-    npm_flags="--unsafe-perm"
-    log "Running as root, using --unsafe-perm"
-  fi
-
-  log "Running npm install $npm_flags"
-  if npm install $npm_flags >> "$LOG_FILE" 2>&1; then
+  log "Running pnpm install"
+  if pnpm install >> "$LOG_FILE" 2>&1; then
     DEPS_OK="true"
-    log "npm install succeeded"
+    log "pnpm install succeeded"
   else
-    log "npm install failed"
+    log "pnpm install failed"
     return
   fi
 
   # Verify native module (better-sqlite3)
   log "Verifying native modules"
-  if node -e "require('better-sqlite3')" >> "$LOG_FILE" 2>&1; then
+  if node --input-type=module -e "import Database from 'better-sqlite3'; console.log('ok')" >> "$LOG_FILE" 2>&1; then
     NATIVE_OK="true"
     log "better-sqlite3 loads OK"
   else

@@ -1,7 +1,7 @@
-#!/usr/bin/env npx tsx
+#!/usr/bin/env pnpm dlx tsx
 /**
  * X Integration - Authentication Setup
- * Usage: npx tsx setup.ts
+ * Usage: pnpm dlx tsx setup.ts
  *
  * Interactive script - opens browser for manual login
  */

@@ -6,7 +6,7 @@ export interface SkillManifest {
   adds: string[];
   modifies: string[];
   structured?: {
-    npm_dependencies?: Record<string, string>;
+    pnpm_dependencies?: Record<string, string>;
     env_additions?: string[];
     docker_compose_services?: Record<string, unknown>;
   };

@@ -30,13 +30,13 @@ Run the skills engine to apply this skill's code package.
 If `.aquaclaw/` directory doesn't exist yet:
 
 ```bash
-npx tsx scripts/apply-skill.ts --init
+pnpm dlx tsx scripts/apply-skill.ts --init
 ```
 
 ### Apply the skill
 
 ```bash
-npx tsx scripts/apply-skill.ts .claude/skills/add-voice-transcription
+pnpm dlx tsx scripts/apply-skill.ts .claude/skills/add-voice-transcription
 ```
 
 This deterministically:
@@ -54,8 +54,8 @@ If the apply reports merge conflicts, read the intent files:
 ### Validate code changes
 
 ```bash
-npm test
-npm run build
+pnpm test
+pnpm run build
 ```
 
 All tests must pass (including the 3 new voice transcription tests) and build must be clean before proceeding.
@@ -96,7 +96,7 @@ The container reads environment from `data/env/env`, not `.env` directly.
 ### Build and restart
 
 ```bash
-npm run build
+pnpm run build
 launchctl kickstart -k gui/$(id -u)/com.aquaclaw  # macOS
 # Linux: systemctl --user restart aquaclaw
 ```

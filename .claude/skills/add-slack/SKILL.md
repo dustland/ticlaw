@@ -26,7 +26,7 @@ Run the skills engine to apply this skill's code package. The package files are 
 If `.aquaclaw/` directory doesn't exist yet:
 
 ```bash
-npx tsx scripts/apply-skill.ts --init
+pnpm dlx tsx scripts/apply-skill.ts --init
 ```
 
 Or call `initSkillsSystem()` from `skills-engine/migrate.ts`.
@@ -34,7 +34,7 @@ Or call `initSkillsSystem()` from `skills-engine/migrate.ts`.
 ### Apply the skill
 
 ```bash
-npx tsx scripts/apply-skill.ts .claude/skills/add-slack
+pnpm dlx tsx scripts/apply-skill.ts .claude/skills/add-slack
 ```
 
 This deterministically:
@@ -50,8 +50,8 @@ If the apply reports merge conflicts, read the intent file:
 ### Validate code changes
 
 ```bash
-npm test
-npm run build
+pnpm test
+pnpm run build
 ```
 
 All tests must pass (including the new slack tests) and build must be clean before proceeding.
@@ -93,7 +93,7 @@ The container reads environment from `data/env/env`, not `.env` directly.
 ### Build and restart
 
 ```bash
-npm run build
+pnpm run build
 launchctl kickstart -k gui/$(id -u)/com.aquaclaw
 ```
 

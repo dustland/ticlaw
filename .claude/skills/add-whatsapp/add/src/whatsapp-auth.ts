@@ -4,7 +4,7 @@
  * Run this during setup to authenticate with WhatsApp.
  * Displays QR code, waits for scan, saves credentials, then exits.
  *
- * Usage: npx tsx src/whatsapp-auth.ts
+ * Usage: pnpm dlx tsx src/whatsapp-auth.ts
  */
 import fs from 'fs';
 import path from 'path';

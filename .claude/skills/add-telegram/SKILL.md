@@ -30,7 +30,7 @@ Run the skills engine to apply this skill's code package. The package files are 
 If `.aquaclaw/` directory doesn't exist yet:
 
 ```bash
-npx tsx scripts/apply-skill.ts --init
+pnpm dlx tsx scripts/apply-skill.ts --init
 ```
 
 Or call `initSkillsSystem()` from `skills-engine/migrate.ts`.
@@ -38,7 +38,7 @@ Or call `initSkillsSystem()` from `skills-engine/migrate.ts`.
 ### Apply the skill
 
 ```bash
-npx tsx scripts/apply-skill.ts .claude/skills/add-telegram
+pnpm dlx tsx scripts/apply-skill.ts .claude/skills/add-telegram
 ```
 
 This deterministically:
@@ -55,8 +55,8 @@ If the apply reports merge conflicts, read the intent file:
 ### Validate code changes
 
 ```bash
-npm test
-npm run build
+pnpm test
+pnpm run build
 ```
 
 All tests must pass (including the new telegram tests) and build must be clean before proceeding.
@@ -110,7 +110,7 @@ Tell the user:
 ### Build and restart
 
 ```bash
-npm run build
+pnpm run build
 launchctl kickstart -k gui/$(id -u)/com.aquaclaw  # macOS
 # Linux: systemctl --user restart aquaclaw
 ```
@@ -198,16 +198,16 @@ If `/chatid` doesn't work:
 
 ## After Setup
 
-If running `npm run dev` while the service is active:
+If running `pnpm run dev` while the service is active:
 ```bash
 # macOS:
 launchctl unload ~/Library/LaunchAgents/com.aquaclaw.plist
-npm run dev
+pnpm run dev
 # When done testing:
 launchctl load ~/Library/LaunchAgents/com.aquaclaw.plist
 # Linux:
 # systemctl --user stop aquaclaw
-# npm run dev
+# pnpm run dev
 # systemctl --user start aquaclaw
 ```
 
@@ -228,4 +228,4 @@ To remove Telegram integration:
 3. Remove `TELEGRAM_BOT_TOKEN` from `.env`
 4. Remove Telegram registrations from SQLite: `sqlite3 store/messages.db "DELETE FROM registered_groups WHERE jid LIKE 'tg:%'"`
 5. Uninstall: `npm uninstall grammy`
-6. Rebuild: `npm run build && launchctl kickstart -k gui/$(id -u)/com.aquaclaw` (macOS) or `npm run build && systemctl --user restart aquaclaw` (Linux)
+6. Rebuild: `pnpm run build && launchctl kickstart -k gui/$(id -u)/com.aquaclaw` (macOS) or `pnpm run build && systemctl --user restart aquaclaw` (Linux)

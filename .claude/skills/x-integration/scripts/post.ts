@@ -1,7 +1,7 @@
-#!/usr/bin/env npx tsx
+#!/usr/bin/env pnpm dlx tsx
 /**
  * X Integration - Post Tweet
- * Usage: echo '{"content":"Hello world"}' | npx tsx post.ts
+ * Usage: echo '{"content":"Hello world"}' | pnpm dlx tsx post.ts
  */
 
 import { getBrowserContext, runScript, validateContent, config, ScriptResult } from '../lib/browser.js';

@@ -29,8 +29,8 @@ import {
 import {
   mergeDockerComposeServices,
   mergeEnvAdditions,
-  mergeNpmDependencies,
-  runNpmInstall,
+  mergePnpmDependencies,
+  runPnpmInstall,
 } from './structured.js';
 import { ApplyResult } from './types.js';
 
@@ -245,9 +245,9 @@ export async function applySkill(skillDir: string): Promise<ApplyResult> {
     }
 
     // --- Structured operations ---
-    if (manifest.structured?.npm_dependencies) {
+    if (manifest.structured?.pnpm_dependencies) {
       const pkgPath = path.join(projectRoot, 'package.json');
-      mergeNpmDependencies(pkgPath, manifest.structured.npm_dependencies);
+      mergePnpmDependencies(pkgPath, manifest.structured.pnpm_dependencies);
     }
 
     if (manifest.structured?.env_additions) {
@@ -263,12 +263,12 @@ export async function applySkill(skillDir: string): Promise<ApplyResult> {
       );
     }
 
-    // Run npm install if dependencies were added
+    // Run pnpm install if dependencies were added
     if (
-      manifest.structured?.npm_dependencies &&
-      Object.keys(manifest.structured.npm_dependencies).length > 0
+      manifest.structured?.pnpm_dependencies &&
+      Object.keys(manifest.structured.pnpm_dependencies).length > 0
     ) {
-      runNpmInstall();
+      runPnpmInstall();
     }
 
     // --- Post-apply commands ---

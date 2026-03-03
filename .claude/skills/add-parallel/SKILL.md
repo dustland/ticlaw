@@ -232,7 +232,7 @@ echo '{}' | docker run -i --entrypoint /bin/echo aquaclaw-agent:latest "Containe
 Rebuild the main app and restart:
 
 ```bash
-npm run build
+pnpm run build
 launchctl kickstart -k gui/$(id -u)/com.aquaclaw  # macOS
 # Linux: systemctl --user restart aquaclaw
 ```
@@ -286,5 +286,5 @@ To remove Parallel AI integration:
 1. Remove from .env: `sed -i.bak '/PARALLEL_API_KEY/d' .env`
 2. Revert changes to container-runner.ts and agent-runner/src/index.ts
 3. Remove Web Research Tools section from groups/main/CLAUDE.md
-4. Rebuild: `./container/build.sh && npm run build`
+4. Rebuild: `./container/build.sh && pnpm run build`
 5. Restart: `launchctl kickstart -k gui/$(id -u)/com.aquaclaw` (macOS) or `systemctl --user restart aquaclaw` (Linux)

@@ -50,8 +50,8 @@ export {
   areRangesCompatible,
   mergeDockerComposeServices,
   mergeEnvAdditions,
-  mergeNpmDependencies,
-  runNpmInstall,
+  mergePnpmDependencies,
+  runPnpmInstall,
 } from './structured.js';
 export type {
   AppliedSkill,

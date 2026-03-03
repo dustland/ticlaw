@@ -86,6 +86,19 @@ AquaClaw uses physical isolation and port-locking. However, it is designed for c
 
 Yes! While optimized for TiCOS, AquaClaw's `/pincer` and factory logic work with any GitHub-hosted project.
 
+**Can I use third-party LLM providers?**
+
+Yes! AquaClaw defaults to **OpenRouter** which provides access to Claude 3.5 Sonnet and other powerful models via an Anthropic-compatible API. You can switch to direct Anthropic or Gemini by updating your `.env` file.
+
+**How do I configure OpenRouter?**
+
+Set the following in your `.env`:
+```bash
+ANTHROPIC_BASE_URL="https://openrouter.ai/api/v1"
+ANTHROPIC_AUTH_TOKEN="your-openrouter-key"
+ANTHROPIC_MODEL="anthropic/claude-3.5-sonnet"
+```
+
 ## Credits
 
 AquaClaw is proudly built on the foundation of **[Nanoclaw](https://github.com/qwibitai/NanoClaw)**. We maintain Nanoclaw's core message routing and task scheduling logic while extending it with our R&D-specific features.

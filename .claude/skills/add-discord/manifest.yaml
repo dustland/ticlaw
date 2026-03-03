@@ -14,4 +14,4 @@ structured:
     - DISCORD_BOT_TOKEN
 conflicts: []
 depends: []
-test: "npx vitest run src/channels/discord.test.ts"
+test: "pnpm dlx vitest run src/channels/discord.test.ts"

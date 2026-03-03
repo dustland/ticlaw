@@ -11,8 +11,8 @@ import { loadPathRemap, resolvePathRemap } from './path-remap.js';
 import {
   mergeDockerComposeServices,
   mergeEnvAdditions,
-  mergeNpmDependencies,
-  runNpmInstall,
+  mergePnpmDependencies,
+  runPnpmInstall,
 } from './structured.js';
 
 export interface ReplayOptions {
@@ -206,8 +206,8 @@ export async function replaySkills(
       }
 
       // Collect structured ops
-      if (manifest.structured?.npm_dependencies) {
-        Object.assign(allNpmDeps, manifest.structured.npm_dependencies);
+      if (manifest.structured?.pnpm_dependencies) {
+        Object.assign(allNpmDeps, manifest.structured.pnpm_dependencies);
         hasNpmDeps = true;
       }
       if (manifest.structured?.env_additions) {
@@ -244,7 +244,7 @@ export async function replaySkills(
   // 4. Apply aggregated structured operations (only if no conflicts)
   if (hasNpmDeps) {
     const pkgPath = path.join(projectRoot, 'package.json');
-    mergeNpmDependencies(pkgPath, allNpmDeps);
+    mergePnpmDependencies(pkgPath, allNpmDeps);
   }
 
   if (allEnvAdditions.length > 0) {
@@ -257,12 +257,12 @@ export async function replaySkills(
     mergeDockerComposeServices(composePath, allDockerServices);
   }
 
-  // 5. Run npm install if any deps
+  // 5. Run pnpm install if any deps
   if (hasNpmDeps) {
     try {
-      runNpmInstall();
+      runPnpmInstall();
     } catch {
-      // npm install failure is non-fatal for replay
+      // pnpm install failure is non-fatal for replay
     }
   }
 

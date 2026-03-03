@@ -45,7 +45,7 @@ RUN npm install
 COPY agent-runner/ ./
 
 # Build TypeScript
-RUN npm run build
+RUN pnpm run build
 
 # Create workspace directories
 RUN mkdir -p /workspace/group /workspace/global /workspace/extra /workspace/ipc/messages /workspace/ipc/tasks /workspace/ipc/input

@@ -62,7 +62,7 @@ export function areRangesCompatible(
   return { compatible: false, resolved: existing };
 }
 
-export function mergeNpmDependencies(
+export function mergePnpmDependencies(
   packageJsonPath: string,
   newDeps: Record<string, string>,
 ): void {
@@ -193,8 +193,8 @@ export function mergeDockerComposeServices(
   fs.writeFileSync(composePath, stringify(compose), 'utf-8');
 }
 
-export function runNpmInstall(): void {
-  execSync('npm install --legacy-peer-deps', {
+export function runPnpmInstall(): void {
+  execSync('pnpm install', {
     stdio: 'inherit',
     cwd: process.cwd(),
   });
