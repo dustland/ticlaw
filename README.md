@@ -1,7 +1,7 @@
 # 🦀 AquaClaw (雪蟹)
 
 <p align="center">
-  <img src="assets/nanoclaw-logo.png" alt="AquaClaw" width="400">
+  <img src="assets/aquaclaw-logo.png" alt="AquaClaw" width="400">
 </p>
 
 <p align="center">
