@@ -474,6 +474,8 @@ async function main(): Promise<void> {
       isGroup?: boolean,
     ) => storeChatMetadata(chatJid, timestamp, name, channel, isGroup),
     registeredGroups: () => registeredGroups,
+    onGroupRegistered: (jid: string, group: RegisteredGroup) =>
+      registerGroup(jid, group),
   };
 
   // Create and connect all registered channels.
