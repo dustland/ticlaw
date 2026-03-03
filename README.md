@@ -51,8 +51,6 @@ AquaClaw extends the philosophy of [NanoClaw](https://github.com/qwibitai/nanocl
 
 **Physical over Virtual.** While we support container isolation, AquaClaw prefers physical directory isolation for R&D to ensure native performance and full access to system-level tools (GPU, Keychain, etc.) when needed.
 
-**Built for the TiCOS Ecosystem.** AquaClaw isn't just a general-purpose bot; it's the primary engine for Tiwater's autonomous R&D, with native support for our specific CI/CD and verification pipelines.
-
 **Customization = code changes.** No configuration sprawl. If you want different behavior, you modify the AquaClaw engine directly.
 
 ## Requirements

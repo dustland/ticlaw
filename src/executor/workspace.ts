@@ -11,7 +11,11 @@ import { ASSISTANT_NAME } from '../config.js';
 
 const HOME_DIR = os.homedir();
 export const FACTORY_DIR = path.join(HOME_DIR, 'aquaclaw', 'factory');
-export const ENV_CONFIG_DIR = path.join(process.cwd(), 'config', 'environments');
+export const ENV_CONFIG_DIR = path.join(
+  process.cwd(),
+  'config',
+  'environments',
+);
 
 export interface WorkspaceConfig {
   id: string; // Typically the Discord thread ID
@@ -94,7 +98,7 @@ export class AcWorkspace {
       if (this.config.githubUrl) {
         log(`Cloning repository: ${this.config.githubUrl}`);
         execSync(`git clone ${this.config.githubUrl} .`, { cwd: this.rootDir });
-        
+
         if (this.config.branch) {
           log(`Switching to branch: ${this.config.branch}`);
           execSync(`git checkout ${this.config.branch}`, { cwd: this.rootDir });
@@ -104,7 +108,9 @@ export class AcWorkspace {
       // 2. Seed .env
       // We look for a file in config/environments/ matching the repo name (e.g., user-repo.env)
       if (this.config.githubUrl) {
-        const repoName = this.config.githubUrl.split('/').pop()?.replace('.git', '') || 'default';
+        const repoName =
+          this.config.githubUrl.split('/').pop()?.replace('.git', '') ||
+          'default';
         const seedEnvPath = path.join(ENV_CONFIG_DIR, `${repoName}.env`);
         const targetEnvPath = path.join(this.rootDir, '.env');
 
@@ -116,7 +122,10 @@ export class AcWorkspace {
           // Fallback: check if .env.example exists and copy it
           if (fs.existsSync(path.join(this.rootDir, '.env.example'))) {
             log('Creating .env from .env.example');
-            fs.copyFileSync(path.join(this.rootDir, '.env.example'), targetEnvPath);
+            fs.copyFileSync(
+              path.join(this.rootDir, '.env.example'),
+              targetEnvPath,
+            );
           }
         }
       }
@@ -137,7 +146,9 @@ export class AcWorkspace {
         if (fs.existsSync(path.join(this.rootDir, 'pnpm-lock.yaml'))) {
           log('Detected pnpm, running install...');
           execSync('pnpm install', { cwd: this.rootDir });
-        } else if (fs.existsSync(path.join(this.rootDir, 'package-lock.json'))) {
+        } else if (
+          fs.existsSync(path.join(this.rootDir, 'package-lock.json'))
+        ) {
           log('Detected npm, running install...');
           execSync('npm install', { cwd: this.rootDir });
         }
