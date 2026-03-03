@@ -9,7 +9,7 @@ import {
   createSkillPackage,
   createTempDir,
   initGitRepo,
-  setupNanoclawDir,
+  setupAquaclawDir,
 } from './test-helpers.js';
 import { readState, writeState } from '../state.js';
 
@@ -19,7 +19,7 @@ describe('apply', () => {
 
   beforeEach(() => {
     tmpDir = createTempDir();
-    setupNanoclawDir(tmpDir);
+    setupAquaclawDir(tmpDir);
     createMinimalState(tmpDir);
     initGitRepo(tmpDir);
     process.chdir(tmpDir);

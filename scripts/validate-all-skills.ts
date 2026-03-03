@@ -69,9 +69,9 @@ function resetWorkingTree(): void {
   }
 }
 
-function initNanoclaw(): void {
+function initAquaclaw(): void {
   execSync(
-    'npx tsx -e "import { initNanoclawDir } from \'./skills-engine/index\'; initNanoclawDir();"',
+    'npx tsx -e "import { initAquaclawDir } from \'./skills-engine/index\'; initAquaclawDir();"',
     { stdio: 'pipe', timeout: 30_000 },
   );
 }
@@ -127,7 +127,7 @@ async function main(): Promise<void> {
 
     // Clean slate
     resetWorkingTree();
-    initNanoclaw();
+    initAquaclaw();
 
     // Step 1: Apply skill
     try {

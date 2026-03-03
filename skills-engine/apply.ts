@@ -8,7 +8,7 @@ import { clearBackup, createBackup, restoreBackup } from './backup.js';
 import { AQUACLAW_DIR, STATE_FILE } from './constants.js';
 import { copyDir } from './fs-utils.js';
 import { isCustomizeActive } from './customize.js';
-import { initNanoclawDir } from './init.js';
+import { initAquaclawDir } from './init.js';
 import { executeFileOps } from './file-ops.js';
 import { acquireLock } from './lock.js';
 import {
@@ -42,7 +42,7 @@ export async function applySkill(skillDir: string): Promise<ApplyResult> {
   // Auto-initialize skills system if state file doesn't exist
   const statePath = path.join(projectRoot, AQUACLAW_DIR, STATE_FILE);
   if (!fs.existsSync(statePath)) {
-    initNanoclawDir();
+    initAquaclawDir();
   }
   const currentState = readState();
 

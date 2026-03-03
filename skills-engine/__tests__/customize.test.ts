@@ -10,7 +10,7 @@ import {
 import { CUSTOM_DIR } from '../constants.js';
 import {
   createTempDir,
-  setupNanoclawDir,
+  setupAquaclawDir,
   createMinimalState,
   cleanup,
   writeState,
@@ -27,7 +27,7 @@ describe('customize', () => {
 
   beforeEach(() => {
     tmpDir = createTempDir();
-    setupNanoclawDir(tmpDir);
+    setupAquaclawDir(tmpDir);
     createMinimalState(tmpDir);
     fs.mkdirSync(path.join(tmpDir, CUSTOM_DIR), { recursive: true });
     process.chdir(tmpDir);

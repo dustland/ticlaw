@@ -9,7 +9,7 @@ import {
   createMinimalState,
   createTempDir,
   initGitRepo,
-  setupNanoclawDir,
+  setupAquaclawDir,
   writeState,
 } from './test-helpers.js';
 
@@ -19,7 +19,7 @@ describe('rebase', () => {
 
   beforeEach(() => {
     tmpDir = createTempDir();
-    setupNanoclawDir(tmpDir);
+    setupAquaclawDir(tmpDir);
     createMinimalState(tmpDir);
     process.chdir(tmpDir);
   });

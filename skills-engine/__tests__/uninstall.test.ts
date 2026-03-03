@@ -8,7 +8,7 @@ import {
   cleanup,
   createTempDir,
   initGitRepo,
-  setupNanoclawDir,
+  setupAquaclawDir,
   writeState,
 } from './test-helpers.js';
 
@@ -18,7 +18,7 @@ describe('uninstall', () => {
 
   beforeEach(() => {
     tmpDir = createTempDir();
-    setupNanoclawDir(tmpDir);
+    setupAquaclawDir(tmpDir);
     initGitRepo(tmpDir);
     process.chdir(tmpDir);
   });

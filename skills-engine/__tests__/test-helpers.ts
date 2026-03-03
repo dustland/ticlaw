@@ -8,7 +8,7 @@ export function createTempDir(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'aquaclaw-test-'));
 }
 
-export function setupNanoclawDir(tmpDir: string): void {
+export function setupAquaclawDir(tmpDir: string): void {
   fs.mkdirSync(path.join(tmpDir, '.aquaclaw', 'base', 'src'), {
     recursive: true,
   });

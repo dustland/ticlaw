@@ -16,7 +16,7 @@ export {
   startCustomize,
 } from './customize.js';
 export { executeFileOps } from './file-ops.js';
-export { initNanoclawDir } from './init.js';
+export { initAquaclawDir } from './init.js';
 export { acquireLock, isLocked, releaseLock } from './lock.js';
 export {
   checkConflicts,

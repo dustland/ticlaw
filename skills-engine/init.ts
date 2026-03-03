@@ -24,7 +24,7 @@ const BASE_EXCLUDES = [
   'logs',
 ];
 
-export function initNanoclawDir(): void {
+export function initAquaclawDir(): void {
   const projectRoot = process.cwd();
   const aquaclawDir = path.join(projectRoot, AQUACLAW_DIR);
   const baseDir = path.join(projectRoot, BASE_DIR);

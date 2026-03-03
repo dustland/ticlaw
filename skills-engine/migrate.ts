@@ -3,11 +3,11 @@ import fs from 'fs';
 import path from 'path';
 
 import { BASE_DIR, CUSTOM_DIR, AQUACLAW_DIR } from './constants.js';
-import { initNanoclawDir } from './init.js';
+import { initAquaclawDir } from './init.js';
 import { recordCustomModification } from './state.js';
 
 export function initSkillsSystem(): void {
-  initNanoclawDir();
+  initAquaclawDir();
   console.log('Skills system initialized. .aquaclaw/ directory created.');
 }
 
@@ -15,7 +15,7 @@ export function migrateExisting(): void {
   const projectRoot = process.cwd();
 
   // First, do a fresh init
-  initNanoclawDir();
+  initAquaclawDir();
 
   // Then, diff current files against base to capture modifications
   const baseSrcDir = path.join(projectRoot, BASE_DIR, 'src');
