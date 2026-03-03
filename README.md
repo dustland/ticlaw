@@ -92,12 +92,11 @@ Yes! AquaClaw defaults to **OpenRouter** which provides access to Claude 3.5 Son
 
 **How do I configure OpenRouter?**
 
-Set the following in your `.env`:
+Simply set your key in `.env`:
 ```bash
-ANTHROPIC_BASE_URL="https://openrouter.ai/api/v1"
-ANTHROPIC_AUTH_TOKEN="your-openrouter-key"
-ANTHROPIC_MODEL="anthropic/claude-3.5-sonnet"
+OPENROUTER_API_KEY="your-openrouter-key"
 ```
+AquaClaw automatically handles the routing and model defaults.
 
 ## Credits
 

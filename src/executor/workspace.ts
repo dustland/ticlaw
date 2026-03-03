@@ -20,7 +20,9 @@ export class PortLocker {
     // In a real implementation, we'd check if the port is actually in use.
     // For now, we'll use a simple file-based lock or just a random available port.
     // Let's implement a simple random selection for the prototype.
-    const port = Math.floor(Math.random() * (this.endPort - this.startPort + 1)) + this.startPort;
+    const port =
+      Math.floor(Math.random() * (this.endPort - this.startPort + 1)) +
+      this.startPort;
     return port;
   }
 }

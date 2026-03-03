@@ -215,7 +215,7 @@ function buildVolumeMounts(
  * Secrets are never written to disk or mounted as files.
  */
 function readSecrets(): Record<string, string> {
-  return readEnvFile([
+  const secrets = readEnvFile([
     'CLAUDE_CODE_OAUTH_TOKEN',
     'ANTHROPIC_API_KEY',
     'ANTHROPIC_BASE_URL',
@@ -223,6 +223,21 @@ function readSecrets(): Record<string, string> {
     'ANTHROPIC_MODEL',
     'OPENROUTER_API_KEY',
   ]);
+
+  // If OpenRouter is provided, map it to what the SDK expects
+  if (secrets.OPENROUTER_API_KEY) {
+    if (!secrets.ANTHROPIC_API_KEY) {
+      secrets.ANTHROPIC_API_KEY = secrets.OPENROUTER_API_KEY;
+    }
+    if (!secrets.ANTHROPIC_BASE_URL) {
+      secrets.ANTHROPIC_BASE_URL = 'https://openrouter.ai/api/v1';
+    }
+    if (!secrets.ANTHROPIC_MODEL) {
+      secrets.ANTHROPIC_MODEL = 'anthropic/claude-3.5-sonnet';
+    }
+  }
+
+  return secrets;
 }
 
 function buildContainerArgs(

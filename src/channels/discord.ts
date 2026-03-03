@@ -103,18 +103,20 @@ export class DiscordChannel implements Channel {
 
       // Handle attachments
       if (message.attachments.size > 0) {
-        const attachmentDescriptions = [...message.attachments.values()].map((att) => {
-          const contentType = att.contentType || '';
-          if (contentType.startsWith('image/')) {
-            return `[Image: ${att.name || 'image'}]`;
-          } else if (contentType.startsWith('video/')) {
-            return `[Video: ${att.name || 'video'}]`;
-          } else if (contentType.startsWith('audio/')) {
-            return `[Audio: ${att.name || 'audio'}]`;
-          } else {
-            return `[File: ${att.name || 'file'}]`;
-          }
-        });
+        const attachmentDescriptions = [...message.attachments.values()].map(
+          (att) => {
+            const contentType = att.contentType || '';
+            if (contentType.startsWith('image/')) {
+              return `[Image: ${att.name || 'image'}]`;
+            } else if (contentType.startsWith('video/')) {
+              return `[Video: ${att.name || 'video'}]`;
+            } else if (contentType.startsWith('audio/')) {
+              return `[Audio: ${att.name || 'audio'}]`;
+            } else {
+              return `[File: ${att.name || 'file'}]`;
+            }
+          },
+        );
         if (content) {
           content = `${content}\n${attachmentDescriptions.join('\n')}`;
         } else {
@@ -140,7 +142,13 @@ export class DiscordChannel implements Channel {
 
       // Store chat metadata for discovery
       const isGroup = message.guild !== null;
-      this.opts.onChatMetadata(chatJid, timestamp, chatName, 'discord', isGroup);
+      this.opts.onChatMetadata(
+        chatJid,
+        timestamp,
+        chatName,
+        'discord',
+        isGroup,
+      );
 
       // Only deliver full message for registered groups
       const group = this.opts.registeredGroups()[chatJid];
@@ -196,7 +204,9 @@ export class DiscordChannel implements Channel {
     const url = parts[1];
 
     if (!url) {
-      await message.reply('Please provide a GitHub Issue URL. Usage: `/pincer https://github.com/user/repo/issues/1`');
+      await message.reply(
+        'Please provide a GitHub Issue URL. Usage: `/pincer https://github.com/user/repo/issues/1`',
+      );
       return;
     }
 
@@ -204,7 +214,7 @@ export class DiscordChannel implements Channel {
       // 1. Create a Discord Thread
       const threadName = `🦀-pincer-${message.author.username}-${Date.now().toString().slice(-4)}`;
       let thread: AnyThreadChannel;
-      
+
       if (message.channel instanceof TextChannel) {
         thread = await message.channel.threads.create({
           name: threadName,
@@ -217,13 +227,15 @@ export class DiscordChannel implements Channel {
       }
 
       const threadJid = `dc:${thread.id}`;
-      await thread.send(`雪蟹已就位 (AquaClaw ready). Target: ${url}\nInitializing physical workspace...`);
+      await thread.send(
+        `雪蟹已就位 (AquaClaw ready). Target: ${url}\nInitializing physical workspace...`,
+      );
 
       // 2. Initialize Workspace
       const workspace = new AcWorkspace({
         id: thread.id,
         name: threadName,
-        githubUrl: url
+        githubUrl: url,
       });
       await workspace.init();
 
@@ -234,15 +246,17 @@ export class DiscordChannel implements Channel {
         trigger: `@${ASSISTANT_NAME}`,
         added_at: new Date().toISOString(),
         requiresTrigger: false, // Threads created by /pincer are auto-commanded
-        isMain: false
+        isMain: false,
       };
 
       if (this.opts.onGroupRegistered) {
         this.opts.onGroupRegistered(threadJid, newGroup);
       }
 
-      await thread.send(`Workspace initialized at \`~/aquaclaw/factory/${thread.id}\`. I am now listening to this thread.`);
-      
+      await thread.send(
+        `Workspace initialized at \`~/aquaclaw/factory/${thread.id}\`. I am now listening to this thread.`,
+      );
+
       // Send the initial prompt to the agent
       this.opts.onMessage(threadJid, {
         id: `init-${Date.now()}`,
@@ -253,7 +267,6 @@ export class DiscordChannel implements Channel {
         timestamp: new Date().toISOString(),
         is_from_me: false,
       });
-
     } catch (err: any) {
       logger.error({ err: err.message }, 'Failed to handle /pincer command');
       await message.reply(`Failed to start Pincer task: ${err.message}`);
@@ -326,12 +339,12 @@ export class DiscordChannel implements Channel {
 registerChannel('discord', (opts: ChannelOpts) => {
   const envVars = readEnvFile(['DISCORD_BOT_TOKEN', 'AC_DISCORD_TOKEN']);
   const token =
-    process.env.AC_DISCORD_TOKEN || 
-    process.env.DISCORD_BOT_TOKEN || 
+    process.env.AC_DISCORD_TOKEN ||
+    process.env.DISCORD_BOT_TOKEN ||
     envVars.AC_DISCORD_TOKEN ||
-    envVars.DISCORD_BOT_TOKEN || 
+    envVars.DISCORD_BOT_TOKEN ||
     '';
-    
+
   if (!token) {
     logger.warn('Discord: AC_DISCORD_TOKEN not set');
     return null;

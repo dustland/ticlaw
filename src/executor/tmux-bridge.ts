@@ -16,7 +16,15 @@ export class TmuxBridge {
       // -d: detached
       // -s: session name
       // -c: start directory
-      const tmux = spawn('tmux', ['new-session', '-d', '-s', this.sessionId, '-c', cwd, command]);
+      const tmux = spawn('tmux', [
+        'new-session',
+        '-d',
+        '-s',
+        this.sessionId,
+        '-c',
+        cwd,
+        command,
+      ]);
 
       tmux.on('close', (code) => {
         if (code === 0) {
@@ -36,10 +44,10 @@ export class TmuxBridge {
     // For live streaming, we can use a small loop or 'tmux pipe-pane -t {session} "cat >> {pipe}"'
     // For simplicity in this prototype, we'll use a 'tmux capture-pane' polling approach
     // or a tail -f on a log file if we redirect command output.
-    
+
     // Better approach: spawn a process that tails the tmux pipe
     logger.info({ sessionId: this.sessionId }, 'Starting tmux stream');
-    
+
     // Capture pane periodically for now (simplest for prototype)
     const interval = setInterval(async () => {
       try {
@@ -79,7 +87,13 @@ export class TmuxBridge {
 
   async sendKeys(keys: string): Promise<void> {
     return new Promise((resolve, reject) => {
-      const tmux = spawn('tmux', ['send-keys', '-t', this.sessionId, keys, 'C-m']);
+      const tmux = spawn('tmux', [
+        'send-keys',
+        '-t',
+        this.sessionId,
+        keys,
+        'C-m',
+      ]);
       tmux.on('close', (code) => {
         if (code === 0) resolve();
         else reject(new Error(`Tmux send-keys exit code ${code}`));
