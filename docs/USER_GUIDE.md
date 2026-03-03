@@ -23,6 +23,12 @@ Ensure your `.env` is configured with:
 - `AC_CODING_CLI`: Set to `"gemini"` (default) or `"claude"`.
 - `HTTPS_PROXY`: (Optional) If you are in a region with restricted access.
 
+### 3. Repository Environment Seeding (Optional but Recommended)
+To automate the creation of `.env` files for the projects AquaClaw works on:
+1. Create a directory: `config/environments/`.
+2. Add `.env` files named after your repositories (e.g., `ticos.env` for `tiwater/ticos`).
+3. AquaClaw will automatically copy this file into the workspace during the `/pincer` phase.
+
 ---
 
 ## 🛠 Command Reference

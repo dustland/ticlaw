@@ -5,17 +5,19 @@ import { logger } from '../logger.js';
 import chokidar, { FSWatcher } from 'chokidar';
 import { DiffSummarizer } from './diff-summarizer.js';
 import { PlaywrightVerifier } from './playwright-verifier.js';
-import { exec } from 'child_process';
+import { exec, execSync } from 'child_process';
 import { getMessagesSince } from '../db.js';
 import { ASSISTANT_NAME } from '../config.js';
 
 const HOME_DIR = os.homedir();
 export const FACTORY_DIR = path.join(HOME_DIR, 'aquaclaw', 'factory');
+export const ENV_CONFIG_DIR = path.join(process.cwd(), 'config', 'environments');
 
 export interface WorkspaceConfig {
   id: string; // Typically the Discord thread ID
   name: string;
   githubUrl?: string;
+  branch?: string;
   onFileAdded?: (filePath: string) => Promise<void>;
   onSummary?: (summary: string) => Promise<void>;
   onPush?: (prUrl: string) => Promise<void>;
@@ -73,6 +75,81 @@ export class AcWorkspace {
 
     // Start watching for screenshots and code changes
     this.startWatcher();
+  }
+
+  /**
+   * Automates the environment preparation: clone, env seeding, and bootstrapping.
+   */
+  async autoBootstrap(): Promise<{ success: boolean; log: string }> {
+    logger.info({ url: this.config.githubUrl }, 'Starting auto-bootstrap');
+    let output = '';
+
+    const log = (msg: string) => {
+      output += `${msg}\n`;
+      logger.info({ id: this.config.id }, msg);
+    };
+
+    try {
+      // 1. Clone Repo
+      if (this.config.githubUrl) {
+        log(`Cloning repository: ${this.config.githubUrl}`);
+        execSync(`git clone ${this.config.githubUrl} .`, { cwd: this.rootDir });
+        
+        if (this.config.branch) {
+          log(`Switching to branch: ${this.config.branch}`);
+          execSync(`git checkout ${this.config.branch}`, { cwd: this.rootDir });
+        }
+      }
+
+      // 2. Seed .env
+      // We look for a file in config/environments/ matching the repo name (e.g., user-repo.env)
+      if (this.config.githubUrl) {
+        const repoName = this.config.githubUrl.split('/').pop()?.replace('.git', '') || 'default';
+        const seedEnvPath = path.join(ENV_CONFIG_DIR, `${repoName}.env`);
+        const targetEnvPath = path.join(this.rootDir, '.env');
+
+        if (fs.existsSync(seedEnvPath)) {
+          log(`Seeding .env from ${seedEnvPath}`);
+          fs.copyFileSync(seedEnvPath, targetEnvPath);
+        } else {
+          log(`No pre-defined .env found for ${repoName} in ${ENV_CONFIG_DIR}`);
+          // Fallback: check if .env.example exists and copy it
+          if (fs.existsSync(path.join(this.rootDir, '.env.example'))) {
+            log('Creating .env from .env.example');
+            fs.copyFileSync(path.join(this.rootDir, '.env.example'), targetEnvPath);
+          }
+        }
+      }
+
+      // 3. Run Bootstrap Scripts
+      const setupScripts = ['setup.sh', 'bootstrap.sh', 'init.sh'];
+      for (const script of setupScripts) {
+        const scriptPath = path.join(this.rootDir, script);
+        if (fs.existsSync(scriptPath)) {
+          log(`Running bootstrap script: ${script}`);
+          execSync(`chmod +x ${script} && ./${script}`, { cwd: this.rootDir });
+          break; // Only run the first one found
+        }
+      }
+
+      // 4. Install Dependencies if no script was found but lockfiles exist
+      if (!fs.existsSync(path.join(this.rootDir, 'node_modules'))) {
+        if (fs.existsSync(path.join(this.rootDir, 'pnpm-lock.yaml'))) {
+          log('Detected pnpm, running install...');
+          execSync('pnpm install', { cwd: this.rootDir });
+        } else if (fs.existsSync(path.join(this.rootDir, 'package-lock.json'))) {
+          log('Detected npm, running install...');
+          execSync('npm install', { cwd: this.rootDir });
+        }
+      }
+
+      log('Auto-bootstrap completed successfully.');
+      return { success: true, log: output };
+    } catch (err: any) {
+      const errorMsg = `Bootstrap failed: ${err.message}`;
+      logger.error({ err }, errorMsg);
+      return { success: false, log: output + '\n' + errorMsg };
+    }
   }
 
   private startWatcher(): void {

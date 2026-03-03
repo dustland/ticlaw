@@ -326,13 +326,23 @@ export class DiscordChannel implements Channel {
       });
       await workspace.init();
 
-      // 3. Register Group Automatically
+      // 3. Auto-Bootstrap
+      await thread.send('🏗 Preparing environment (cloning, seeding .env, installing deps)...');
+      const bootstrapResult = await workspace.autoBootstrap();
+      
+      if (!bootstrapResult.success) {
+        await thread.send(`⚠️ **Environment Preparation Warning:**\n\`\`\`\n${bootstrapResult.log.slice(-1500)}\n\`\`\`\nI will still attempt to proceed, but manual intervention may be needed.`);
+      } else {
+        await thread.send('✅ Environment ready.');
+      }
+
+      // 4. Register Group Automatically
       const newGroup: RegisteredGroup = {
         name: threadName,
-        folder: thread.id, // Using thread ID as folder name for uniqueness
+        folder: thread.id,
         trigger: `@${ASSISTANT_NAME}`,
         added_at: new Date().toISOString(),
-        requiresTrigger: false, // Threads created by /pincer are auto-commanded
+        requiresTrigger: false,
         isMain: false,
       };
 
