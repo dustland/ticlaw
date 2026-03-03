@@ -27,7 +27,7 @@ export class PlaywrightVerifier {
 
     const timestamp = Date.now().toString();
     const screenshotPath = path.join(outputDir, `${label}-${timestamp}.png`);
-    
+
     // Ensure output dir exists
     fs.mkdirSync(outputDir, { recursive: true });
 
@@ -36,22 +36,25 @@ export class PlaywrightVerifier {
       page = await this.browser.newPage();
       // Set a reasonable viewport for a Mac Mini R&D environment
       await page.setViewportSize({ width: 1280, height: 800 });
-      
+
       logger.info({ url, label }, 'Playwright: Navigating to URL');
       await page.goto(url, { waitUntil: 'networkidle', timeout: 30000 });
-      
+
       // Wait a bit for any animations
       await page.waitForTimeout(2000);
-      
+
       await page.screenshot({ path: screenshotPath, fullPage: true });
       logger.info({ screenshotPath }, 'Playwright: Screenshot captured');
-      
+
       return {
         screenshotPath,
         timestamp: new Date().toISOString(),
       };
     } catch (err) {
-      logger.error({ err, url, label }, 'Playwright: Failed to capture screenshot');
+      logger.error(
+        { err, url, label },
+        'Playwright: Failed to capture screenshot',
+      );
       return null;
     } finally {
       if (page) await page.close();

@@ -309,7 +309,10 @@ async function runPhysicalAgent(
   return { status: 'success', result: 'Physical session started in tmux' };
 }
 
-async function triggerVerification(chatJid: string, url: string): Promise<void> {
+async function triggerVerification(
+  chatJid: string,
+  url: string,
+): Promise<void> {
   const group = registeredGroups[chatJid];
   if (!group) return;
 
@@ -319,8 +322,13 @@ async function triggerVerification(chatJid: string, url: string): Promise<void> 
       id: group.folder,
       name: group.name,
       onFileAdded: async (filePath) => {
-        await routeOutboundFile(channels, chatJid, filePath, '📸 Verification Snapshot');
-      }
+        await routeOutboundFile(
+          channels,
+          chatJid,
+          filePath,
+          '📸 Verification Snapshot',
+        );
+      },
     });
     await workspace.init();
     activeWorkspaces.set(group.folder, workspace);
@@ -475,9 +483,13 @@ async function main(): Promise<void> {
     if (factory) {
       const channel = factory(channelOpts as any);
       if (channel) {
-        logger.info({ channel: name }, 'Connecting channel');
-        await channel.connect();
-        channels.push(channel);
+        try {
+          logger.info({ channel: name }, 'Connecting channel');
+          await channel.connect();
+          channels.push(channel);
+        } catch (err) {
+          logger.error({ channel: name, err }, 'Failed to connect channel');
+        }
       }
     }
   }

@@ -7,6 +7,7 @@ import {
   ThreadChannel,
   AnyThreadChannel,
 } from 'discord.js';
+import { ProxyAgent } from 'undici';
 
 import { ASSISTANT_NAME, TRIGGER_PATTERN } from '../config.js';
 import { readEnvFile } from '../env.js';
@@ -41,6 +42,20 @@ export class DiscordChannel implements Channel {
   }
 
   async connect(): Promise<void> {
+    const envVars = readEnvFile([
+      'HTTPS_PROXY',
+      'HTTP_PROXY',
+      'http_proxy',
+      'https_proxy',
+    ]);
+    const proxyUrl =
+      process.env.HTTPS_PROXY ||
+      process.env.HTTP_PROXY ||
+      envVars.HTTPS_PROXY ||
+      envVars.HTTP_PROXY ||
+      envVars.http_proxy ||
+      envVars.https_proxy;
+
     this.client = new Client({
       intents: [
         GatewayIntentBits.Guilds,
@@ -49,6 +64,12 @@ export class DiscordChannel implements Channel {
         GatewayIntentBits.DirectMessages,
       ],
     });
+
+    if (proxyUrl) {
+      logger.info({ proxy: proxyUrl }, 'Discord: Using proxy for connection');
+      // Discord.js v14 uses undici for REST requests
+      (this.client as any).rest.setAgent(new ProxyAgent(proxyUrl));
+    }
 
     this.client.on(Events.MessageCreate, async (message: Message) => {
       // Ignore bot messages (including own)
@@ -198,8 +219,13 @@ export class DiscordChannel implements Channel {
       logger.error({ err: err.message }, 'Discord client error');
     });
 
-    return new Promise<void>((resolve) => {
+    return new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        reject(new Error('Discord login timed out (30s)'));
+      }, 30000);
+
       this.client!.once(Events.ClientReady, (readyClient) => {
+        clearTimeout(timeout);
         logger.info(
           { username: readyClient.user.tag, id: readyClient.user.id },
           'Discord bot connected',
@@ -211,7 +237,10 @@ export class DiscordChannel implements Channel {
         resolve();
       });
 
-      this.client!.login(this.botToken);
+      this.client!.login(this.botToken).catch((err) => {
+        clearTimeout(timeout);
+        reject(err);
+      });
     });
   }
 
