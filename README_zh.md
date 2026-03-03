@@ -70,6 +70,8 @@ AquaClaw 运行在 **指挥 -> 工厂 -> 中继** 的循环中：
 4.  **验证:** Playwright 运行自动化 UI 测试。
 5.  **交付:** PR 提交至 GitHub。
 
+有关如何操作系统的完整指南，请参阅 [用户指南 (User Guide)](docs/USER_GUIDE.md)。
+
 ## 常见问题
 
 **为什么要用 Tmux 而不仅仅是容器？**

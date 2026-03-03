@@ -72,6 +72,8 @@ AquaClaw operates on a **Command -> Factory -> Relay** loop:
 4.  **Verification:** Playwright runs automated UI tests.
 5.  **Delivery:** PR is submitted to GitHub.
 
+For a complete guide on how to operate the system, see the [User Guide](docs/USER_GUIDE.md).
+
 ## FAQ
 
 **Why Tmux instead of just containers?**

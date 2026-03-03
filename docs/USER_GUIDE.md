@@ -1,0 +1,85 @@
+# 🦀 AquaClaw (雪蟹) User Guide
+
+Welcome to AquaClaw, your distributed AI R&D engine. This guide explains how to use the system to automate your development workflows via Discord.
+
+---
+
+## 🚀 Getting Started
+
+### 1. Engine Initialization
+Before the AI can work, the engine must be running on your host machine (e.g., Mac Mini):
+
+```bash
+pnpm install
+pnpm run build
+pnpm start
+```
+*Look for `Discord bot connected` in the terminal.*
+
+### 2. Environment Prerequisites
+Ensure your `.env` is configured with:
+- `AC_DISCORD_TOKEN`: Your bot token.
+- `OPENROUTER_API_KEY`: For LLM access.
+- `AC_CODING_CLI`: Set to `"gemini"` (default) or `"claude"`.
+- `HTTPS_PROXY`: (Optional) If you are in a region with restricted access.
+
+---
+
+## 🛠 Command Reference
+
+AquaClaw is commanded entirely through **Discord**. All task-specific commands should be run within the **Thread** created for that task.
+
+### 🦀 `/pincer [GitHub Issue URL]`
+**Usage:** Start a new research or development task.
+- **What it does:** 
+  1. Creates a dedicated Discord Thread.
+  2. Creates a physical workspace at `~/aquaclaw/factory/{thread_id}`.
+  3. Clones the repository.
+  4. Starts a persistent Tmux session for the AI.
+- **Example:** `/pincer https://github.com/user/repo/issues/42`
+
+### 📸 `/verify [URL]`
+**Usage:** Trigger an automated UI verification.
+- **What it does:** 
+  1. Spins up a headless Playwright browser.
+  2. Navigates to the provided URL.
+  3. Captures a full-page screenshot.
+  4. Automatically uploads the screenshot to the Discord thread.
+- **Example:** `/verify http://localhost:3000`
+
+### 🛠 `/skill [skill-name]`
+**Usage:** Inject specialized capabilities into the active workspace.
+- **What it does:** Applies an OpenClaw skill (found in `.claude/skills/`) to the current physical factory.
+- **Example:** `/skill add-slack`
+
+### 🚀 `/push`
+**Usage:** Finalize the task and submit your work.
+- **What it does:** 
+  1. Summarizes all code changes using Gemini.
+  2. Collects the Discord thread history for context.
+  3. Uses the GitHub CLI (`gh`) to create a Pull Request with an AI-generated description.
+
+---
+
+## 📺 Monitoring & Observability
+
+AquaClaw provides three layers of "Live Monitoring":
+
+1.  **The Delta Feed:** Every time the AI modifies a file, a Gemini-powered summary (e.g., *"Modified auth logic to support JWT"*) is posted to the Discord thread.
+2.  **Live Snapshots:** If the AI is working on UI, it may automatically trigger snapshots that appear in the thread.
+3.  **Tmux Bridge (Terminal):** On the host machine, you can attach to the live session at any time:
+    ```bash
+    tmux attach -t ac-{thread_id}
+    ```
+
+---
+
+## 🛡 Security & Best Practices
+
+- **Physical Isolation:** Each task is isolated in its own folder. AquaClaw will never touch files outside of `~/aquaclaw/factory/`.
+- **Port Locking:** If your task starts a web server, AquaClaw assigns a unique port (3000-3050) to prevent conflicts.
+- **Review Before Merge:** Always review the AI-generated PR before merging. Use the automated Playwright screenshots to verify UI changes visually from your phone or desktop Discord app.
+
+---
+
+*AquaClaw: Autonomous R&D for the modern engineering team.*
