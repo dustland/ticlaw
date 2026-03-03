@@ -11,7 +11,11 @@ import { ASSISTANT_NAME } from '../config.js';
 
 const HOME_DIR = os.homedir();
 export const FACTORY_DIR = path.join(HOME_DIR, 'aquaclaw', 'factory');
-export const ENV_CONFIG_DIR = path.join(process.cwd(), 'config', 'environments');
+export const ENV_CONFIG_DIR = path.join(
+  process.cwd(),
+  'config',
+  'environments',
+);
 
 export interface WorkspaceConfig {
   id: string; // Typically the Discord thread ID
@@ -76,7 +80,7 @@ export class AcWorkspace {
       if (!fs.existsSync(logsDir)) {
         fs.mkdirSync(logsDir, { recursive: true });
       }
-      
+
       this.startWatcher();
     }
   }
@@ -141,14 +145,18 @@ export class AcWorkspace {
 
       // 2. Granular Seeding (Monorepo Aware)
       if (this.config.githubUrl) {
-        const repoName = this.config.githubUrl
-          .split('/')
-          .pop()
-          ?.replace('.git', '') || 'default';
+        const repoName =
+          this.config.githubUrl.split('/').pop()?.replace('.git', '') ||
+          'default';
         const seedRepoDir = path.join(ENV_CONFIG_DIR, repoName);
 
-        if (fs.existsSync(seedRepoDir) && fs.statSync(seedRepoDir).isDirectory()) {
-          log(`Detected granular environment seeds in ${seedRepoDir}. Overlaying...`);
+        if (
+          fs.existsSync(seedRepoDir) &&
+          fs.statSync(seedRepoDir).isDirectory()
+        ) {
+          log(
+            `Detected granular environment seeds in ${seedRepoDir}. Overlaying...`,
+          );
           this.copyFolderRecursive(seedRepoDir, this.rootDir);
         } else {
           // Fallback to single-file seed if it exists (legacy)

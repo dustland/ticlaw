@@ -3,11 +3,11 @@ import { logger } from '../src/logger.js';
 import fs from 'fs';
 import path from 'path';
 
-async function testPincerFlow() {
+async function testClawFlow() {
   const testId = 'test-ticos-task-' + Date.now();
   const repoUrl = 'https://github.com/tiwater/ticos.git';
   
-  logger.info({ testId, repoUrl }, '🧪 Starting local Pincer integration test');
+  logger.info({ testId, repoUrl }, '🧪 Starting local Claw integration test');
 
   const workspace = new AcWorkspace({
     id: testId,
@@ -44,7 +44,7 @@ async function testPincerFlow() {
       console.log('--------------------\n');
 
       if (webEnvExists && opsEnvExists && modulesExist) {
-        logger.info('🚀 Pincer workflow verified! The environment is perfectly prepared.');
+        logger.info('🚀 Claw workflow verified! The environment is perfectly prepared.');
       } else {
         logger.error('❌ Verification failed. Some components are missing.');
       }
@@ -58,4 +58,4 @@ async function testPincerFlow() {
   }
 }
 
-testPincerFlow();
+testClawFlow();

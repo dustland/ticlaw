@@ -10,7 +10,7 @@ This document serves as the master execution plan for converting NanoClaw into A
 *   **Goal:** Replace the legacy multi-channel system with a high-fidelity Discord adapter.
 *   **Tasks:**
     *   Initialize `discord.js` client.
-    *   Implement `/pincer [GitHub URL]` command.
+    *   Implement `/claw [GitHub URL]` command.
     *   Implement automated Discord thread creation for each task.
     *   **Success Metric:** A GitHub URL sent via Discord results in a new thread and a confirmation message.
 

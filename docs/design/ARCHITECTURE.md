@@ -13,7 +13,7 @@ This document outlines the architectural decisions that differentiate AquaClaw f
 
 ### A. Discord Command Adapter (The Command Center)
 Replaces the generic multi-channel message registry with a high-fidelity Discord-focused adapter.
-*   **Command:** `/pincer [GitHub Issue URL]`
+*   **Command:** `/claw [GitHub Issue URL]`
 *   **Response Pattern:** Every new task creates a dedicated **Thread** in Discord. All logs, screenshots, and status updates are sent to this thread to keep the main channel clean.
 
 ### B. The Factory (`AcWorkspace`)
@@ -47,7 +47,7 @@ Encapsulates the Claude Agent SDK inside a persistent Tmux session.
 ## 3. Workflow Diagram
 
 ```
-[Discord User] --(/pincer)--> [Bot Adapter]
+[Discord User] --(/claw)--> [Bot Adapter]
                                     |
                             [AcWorkspace Factory]
                                     |

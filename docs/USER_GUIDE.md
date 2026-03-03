@@ -27,7 +27,7 @@ Ensure your `.env` is configured with:
 To automate the creation of `.env` files for the projects AquaClaw works on:
 1. Create a directory: `config/environments/`.
 2. Add `.env` files named after your repositories (e.g., `ticos.env` for `tiwater/ticos`).
-3. AquaClaw will automatically copy this file into the workspace during the `/pincer` phase.
+3. AquaClaw will automatically copy this file into the workspace during the `/claw` phase.
 
 ---
 
@@ -35,14 +35,14 @@ To automate the creation of `.env` files for the projects AquaClaw works on:
 
 AquaClaw is commanded entirely through **Discord**. All task-specific commands should be run within the **Thread** created for that task.
 
-### 🦀 `/pincer [GitHub Issue URL]`
+### 🦀 `/claw [GitHub Issue URL]`
 **Usage:** Start a new research or development task.
 - **What it does:** 
   1. Creates a dedicated Discord Thread.
   2. Creates a physical workspace at `~/aquaclaw/factory/{thread_id}`.
   3. Clones the repository.
   4. Starts a persistent Tmux session for the AI.
-- **Example:** `/pincer https://github.com/user/repo/issues/42`
+- **Example:** `/claw https://github.com/user/repo/issues/42`
 
 ### 📸 `/verify [URL]`
 **Usage:** Trigger an automated UI verification.

@@ -25,7 +25,7 @@ While NanoClaw was built for personal assistance, **AquaClaw** is built for **En
 
 ## 🛠 Core Capabilities
 
-- **🦀 The Pincer (/pincer):** Grab any GitHub Issue URL from Discord, and AquaClaw automatically initializes a fresh, isolated workspace to solve it.
+- **🦀 The Claw (/claw):** Grab any GitHub Issue URL from Discord, and AquaClaw automatically initializes a fresh, isolated workspace to solve it.
 - **🏗 Physical Factory:** Unlike purely virtual containers, AquaClaw manages physical `~/aquaclaw/factory/{task_id}` directories, allowing for persistent toolchain access and easier manual intervention.
 - **📺 Live Monitoring:** Real-time Tmux bridge streaming terminal output directly to Discord threads.
 - **📸 Vision-Backed Audit:** Automated macOS screenshots for UI changes and Gemini-powered "Delta Feeds" for code summaries.
@@ -64,7 +64,7 @@ AquaClaw extends the philosophy of [NanoClaw](https://github.com/qwibitai/nanocl
 
 AquaClaw operates on a **Command -> Factory -> Relay** loop:
 
-1.  **Command:** Discord Bot receives `/pincer [URL]`.
+1.  **Command:** Discord Bot receives `/claw [URL]`.
 2.  **Factory:** A dedicated `AcWorkspace` is created. Tmux session starts.
 3.  **Relay:** Logs, screenshots, and diffs are streamed back to the Discord thread.
 4.  **Verification:** Playwright runs automated UI tests.

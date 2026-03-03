@@ -102,9 +102,9 @@ export class DiscordChannel implements Channel {
       const sender = message.author.id;
       const msgId = message.id;
 
-      // Special Command: /pincer
-      if (content.startsWith('/pincer')) {
-        await this.handlePincerCommand(message);
+      // Special Command: /claw
+      if (content.startsWith('/claw')) {
+        await this.handleClawCommand(message);
         return;
       }
 
@@ -280,30 +280,30 @@ export class DiscordChannel implements Channel {
     });
   }
 
-  private async handlePincerCommand(message: Message): Promise<void> {
+  private async handleClawCommand(message: Message): Promise<void> {
     const parts = message.content.split(' ');
     const url = parts[1];
 
     if (!url) {
       await message.reply(
-        'Please provide a GitHub Issue URL. Usage: `/pincer https://github.com/user/repo/issues/1`',
+        'Please provide a GitHub Issue URL. Usage: `/claw https://github.com/user/repo/issues/1`',
       );
       return;
     }
 
     try {
       // 1. Create a Discord Thread
-      const threadName = `🦀-pincer-${message.author.username}-${Date.now().toString().slice(-4)}`;
+      const threadName = `🦀-claw-${message.author.username}-${Date.now().toString().slice(-4)}`;
       let thread: AnyThreadChannel;
 
       if (message.channel instanceof TextChannel) {
         thread = await message.channel.threads.create({
           name: threadName,
           autoArchiveDuration: 60,
-          reason: `AquaClaw Pincer task for ${url}`,
+          reason: `AquaClaw task for ${url}`,
         });
       } else {
-        await message.reply('Pincer command must be run in a text channel.');
+        await message.reply('Claw command must be run in a text channel.');
         return;
       }
 
@@ -369,8 +369,8 @@ export class DiscordChannel implements Channel {
         is_from_me: false,
       });
     } catch (err: any) {
-      logger.error({ err: err.message }, 'Failed to handle /pincer command');
-      await message.reply(`Failed to start Pincer task: ${err.message}`);
+      logger.error({ err: err.message }, 'Failed to handle /claw command');
+      await message.reply(`Failed to start Claw task: ${err.message}`);
     }
   }
 
@@ -407,11 +407,7 @@ export class DiscordChannel implements Channel {
     }
   }
 
-  async sendFile(
-    jid: string,
-    filePath: string,
-    caption?: string,
-  ): Promise<void> {
+  async sendFile(jid: string, filePath: string, caption?: string): Promise<void> {
     if (!this.client) {
       logger.warn('Discord client not initialized');
       return;
