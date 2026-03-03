@@ -65,6 +65,7 @@ export interface ChannelOpts {
   registeredGroups: () => Record<string, RegisteredGroup>;
   onGroupRegistered: (jid: string, group: RegisteredGroup) => void;
   onVerify?: (chatJid: string, url: string) => Promise<void>;
+  onPush?: (chatJid: string) => Promise<void>;
 }
 
 // Global state
@@ -75,7 +76,9 @@ const channels: Channel[] = [];
 const activeWorkspaces = new Map<string, AcWorkspace>(); // folder -> AcWorkspace
 let messageLoopRunning = false;
 
-// Forward declaration for recursion
+// Create queue
+const queue = new GroupQueue();
+
 async function runAgent(
   chatJid: string,
   prompt: string,
@@ -113,12 +116,12 @@ async function runAgent(
   // Wrap onOutput to track session ID from streamed results
   const wrappedOnOutput = onOutput
     ? async (output: ContainerOutput) => {
-      if (output.newSessionId) {
-        sessions[group.folder] = output.newSessionId;
-        setSession(group.folder, output.newSessionId);
+        if (output.newSessionId) {
+          sessions[group.folder] = output.newSessionId;
+          setSession(group.folder, output.newSessionId);
+        }
+        await onOutput(output);
       }
-      await onOutput(output);
-    }
     : undefined;
 
   try {
@@ -172,9 +175,6 @@ async function runAgent(
   }
 }
 
-// Create queue
-const queue = new GroupQueue();
-
 async function processMessages(chatJid: string): Promise<boolean> {
   const group = registeredGroups[chatJid];
   if (!group) return false;
@@ -223,9 +223,7 @@ export function _setRegisteredGroups(
 }
 
 function registerGroup(jid: string, group: RegisteredGroup): void {
-  // Use DB helper to persist registration
   setRegisteredGroup(jid, group);
-  // Update local cache
   registeredGroups[jid] = group;
   logger.info({ jid, folder: group.folder }, 'Group registered');
 }
@@ -264,16 +262,14 @@ async function runPhysicalAgent(
 
   const secrets = readSecrets();
 
-  // Setup IPC input dir for physical agent
   const ipcInputDir = path.join(workspace.rootDir, 'ipc', 'input');
   fs.mkdirSync(ipcInputDir, { recursive: true });
 
   const agentRunnerDir = path.resolve(process.cwd(), 'container/agent-runner');
 
-  // We need to ensure agent-runner is built
   if (!fs.existsSync(path.join(agentRunnerDir, 'dist/index.js'))) {
     throw new Error(
-      'agent-runner not built. Run pnpm --filter agent-runner build',
+      'agent-runner not built. Run pnpm --filter aquaclaw-agent-runner build',
     );
   }
 
@@ -287,7 +283,7 @@ async function runPhysicalAgent(
             const output = JSON.parse(jsonStr);
             await onOutput(output);
           } catch (err) {
-            // ignore parse errors for partial data
+            // ignore
           }
         }
       }
@@ -307,7 +303,6 @@ async function runPhysicalAgent(
   const tempInput = path.join(workspace.rootDir, 'input.json');
   fs.writeFileSync(tempInput, inputStr);
 
-  // Send keys to tmux session to pipe the input file to the agent-runner
   await bridge.sendKeys(`cat ${tempInput} | node dist/index.js`);
 
   return { status: 'success', result: 'Physical session started in tmux' };
@@ -341,6 +336,28 @@ async function triggerVerification(
   await workspace.verify(url, 'manual-verify');
 }
 
+async function triggerPush(chatJid: string): Promise<void> {
+  const group = registeredGroups[chatJid];
+  if (!group) return;
+
+  const workspace = activeWorkspaces.get(group.folder);
+  if (!workspace) {
+    await sendFn(chatJid, '❌ No active workspace found for this thread.');
+    return;
+  }
+
+  await sendFn(chatJid, '🚀 Creating GitHub PR...');
+  const prUrl = await workspace.push();
+  if (prUrl) {
+    await sendFn(chatJid, `✅ PR Created: ${prUrl}`);
+  } else {
+    await sendFn(
+      chatJid,
+      '❌ Failed to create PR. Ensure you have committed changes and GitHub CLI is authenticated.',
+    );
+  }
+}
+
 async function startMessageLoop(): Promise<void> {
   if (messageLoopRunning) {
     logger.debug('Message loop already running, skipping duplicate start');
@@ -352,7 +369,6 @@ async function startMessageLoop(): Promise<void> {
   while (messageLoopRunning) {
     try {
       const jids = Object.keys(registeredGroups);
-      // Sort to find the most recent seen message
       const lastGlobalTs =
         Object.values(lastAgentTimestamp).sort().reverse()[0] || '';
 
@@ -367,7 +383,6 @@ async function startMessageLoop(): Promise<void> {
           continue;
         }
 
-        // Track last seen timestamp to avoid re-processing on restart
         if (
           !lastAgentTimestamp[chatJid] ||
           msg.timestamp > lastAgentTimestamp[chatJid]
@@ -377,7 +392,6 @@ async function startMessageLoop(): Promise<void> {
 
         if (msg.is_from_me) continue;
 
-        // Trigger logic
         const triggerMatch = TRIGGER_PATTERN.test(msg.content);
         if (group.isMain || !group.requiresTrigger || triggerMatch) {
           logger.info(
@@ -395,21 +409,18 @@ async function startMessageLoop(): Promise<void> {
 }
 
 function loadState(): void {
-  // Load registered groups
   const groups = getAllRegisteredGroups();
   for (const [jid, group] of Object.entries(groups)) {
     registeredGroups[jid] = group;
   }
   logger.info({ count: Object.keys(registeredGroups).length }, 'Groups loaded');
 
-  // Load sessions
   const dbSessions = getAllSessions();
   for (const [folder, sessionId] of Object.entries(dbSessions)) {
     sessions[folder] = sessionId;
   }
   logger.info({ count: Object.keys(sessions).length }, 'Sessions loaded');
 
-  // Load router state (last seen timestamps)
   for (const jid of Object.keys(registeredGroups)) {
     const timestamp = getRouterState(jid);
     if (timestamp) {
@@ -428,9 +439,6 @@ function handleChatMetadata(
   storeChatMetadata(chatJid, timestamp, name, channel, isGroup);
 }
 
-/**
- * Check for messages that arrived while AquaClaw was offline.
- */
 function recoverPendingMessages(): void {
   for (const [chatJid, group] of Object.entries(registeredGroups)) {
     const sinceTimestamp = lastAgentTimestamp[chatJid] || '';
@@ -454,7 +462,6 @@ function ensureContainerSystemRunning(): void {
   }
 }
 
-// Global send function for use in processMessages
 let sendFn: (jid: string, text: string) => Promise<void>;
 
 async function main(): Promise<void> {
@@ -463,7 +470,6 @@ async function main(): Promise<void> {
   logger.info('Database initialized');
   loadState();
 
-  // Channel callbacks (shared by all channels)
   const channelOpts: ChannelOpts = {
     onMessage: (_chatJid: string, msg: NewMessage) => storeMessage(msg),
     onChatMetadata: (
@@ -479,9 +485,12 @@ async function main(): Promise<void> {
     onVerify: async (chatJid, url) => {
       await triggerVerification(chatJid, url);
     },
+    onPush: async (chatJid) => {
+      await triggerPush(chatJid);
+    },
   };
 
-  const CHANNEL_CONNECT_TIMEOUT = 15_000; // 15s per channel
+  const CHANNEL_CONNECT_TIMEOUT = 15_000;
   const registeredChannelNames = getRegisteredChannelNames();
   for (const name of registeredChannelNames) {
     const factory = getChannelFactory(name);
@@ -515,7 +524,6 @@ async function main(): Promise<void> {
     }
   }
 
-  // Define global sendFn
   sendFn = async (jid: string, text: string) => {
     await routeOutbound(channels, jid, text);
     const ts = new Date().toISOString();
@@ -523,7 +531,6 @@ async function main(): Promise<void> {
     setRouterState(jid, ts);
   };
 
-  // Initial recovery and start loop
   recoverPendingMessages();
   startMessageLoop();
 
@@ -536,7 +543,6 @@ async function main(): Promise<void> {
     sendMessage: sendFn,
   });
 
-  // Graceful shutdown handlers
   const shutdown = async (signal: string) => {
     logger.info({ signal }, 'Shutdown signal received');
     await queue.shutdown(10000);
@@ -553,7 +559,7 @@ async function main(): Promise<void> {
 const isDirectRun =
   process.argv[1] &&
   new URL(import.meta.url).pathname ===
-  new URL(`file://${process.argv[1]}`).pathname;
+    new URL(`file://${process.argv[1]}`).pathname;
 
 if (isDirectRun) {
   main().catch((err) => {

@@ -5,6 +5,9 @@ import { logger } from '../logger.js';
 import chokidar, { FSWatcher } from 'chokidar';
 import { DiffSummarizer } from './diff-summarizer.js';
 import { PlaywrightVerifier } from './playwright-verifier.js';
+import { exec } from 'child_process';
+import { getMessagesSince } from '../db.js';
+import { ASSISTANT_NAME } from '../config.js';
 
 const HOME_DIR = os.homedir();
 export const FACTORY_DIR = path.join(HOME_DIR, 'aquaclaw', 'factory');
@@ -15,6 +18,7 @@ export interface WorkspaceConfig {
   githubUrl?: string;
   onFileAdded?: (filePath: string) => Promise<void>;
   onSummary?: (summary: string) => Promise<void>;
+  onPush?: (prUrl: string) => Promise<void>;
 }
 
 export class PortLocker {
@@ -74,8 +78,6 @@ export class AcWorkspace {
   private startWatcher(): void {
     if (this.watcher) return;
 
-    // Watch both screenshots and the root for code changes
-    // We ignore node_modules, .git, and common build artifacts
     this.watcher = chokidar.watch([this.rootDir], {
       ignoreInitial: true,
       persistent: true,
@@ -99,7 +101,6 @@ export class AcWorkspace {
           }
         }
       } else {
-        // Code file added
         this.triggerSummary();
       }
     });
@@ -128,6 +129,51 @@ export class AcWorkspace {
   async verify(url: string, label: string): Promise<void> {
     logger.info({ url, label }, 'Running Playwright verification');
     await this.verifier.captureScreenshot(url, this.screenshotsDir, label);
+  }
+
+  async push(): Promise<string | null> {
+    logger.info({ dir: this.rootDir }, 'Creating GitHub PR');
+
+    // 1. Get history for description
+    const messages = getMessagesSince(`dc:${this.config.id}`, '', ASSISTANT_NAME);
+    const historyText = messages
+      .map((m) => `${m.sender_name}: ${m.content}`)
+      .join('\n');
+
+    // 2. Generate PR description using Gemini
+    const diffSummary = await this.summarizer.summarize(this.rootDir);
+    const prBody = `
+## AquaClaw AI PR
+
+**Summary:** ${diffSummary || 'AI-generated changes'}
+
+**Reasoning & Context (from Discord):**
+${historyText.slice(-2000)}
+
+---
+*Created automatically by AquaClaw 🦀*
+    `;
+
+    const prTitle = `feat: AquaClaw task - ${this.config.name}`;
+
+    return new Promise((resolve) => {
+      // Use GitHub CLI to create PR
+      // --fill uses commits for title/body, but we want our custom one
+      const cmd = `gh pr create --title "${prTitle}" --body "${prBody}"`;
+      exec(cmd, { cwd: this.rootDir }, (err, stdout) => {
+        if (err) {
+          logger.error({ err, cmd }, 'Failed to create PR');
+          resolve(null);
+        } else {
+          const prUrl = stdout.trim();
+          logger.info({ prUrl }, 'GitHub PR created');
+          if (this.config.onPush) {
+            this.config.onPush(prUrl);
+          }
+          resolve(prUrl);
+        }
+      });
+    });
   }
 
   async stop(): Promise<void> {

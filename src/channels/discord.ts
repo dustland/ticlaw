@@ -28,6 +28,7 @@ export interface DiscordChannelOpts extends ChannelOpts {
   registeredGroups: () => Record<string, RegisteredGroup>;
   onGroupRegistered?: (jid: string, group: RegisteredGroup) => void;
   onVerify?: (chatJid: string, url: string) => Promise<void>;
+  onPush?: (chatJid: string) => Promise<void>;
 }
 
 export class DiscordChannel implements Channel {
@@ -67,16 +68,19 @@ export class DiscordChannel implements Channel {
     };
 
     if (proxyUrl) {
-      logger.info({ proxy: proxyUrl }, 'Discord: Configuring proxy for REST and Gateway');
-      
+      logger.info(
+        { proxy: proxyUrl },
+        'Discord: Configuring proxy for REST and Gateway',
+      );
+
       // Agent for REST (undici)
       clientOptions.rest = {
-        agent: new ProxyAgent(proxyUrl)
+        agent: new ProxyAgent(proxyUrl),
       };
-      
+
       // Agent for Gateway (WebSocket)
       clientOptions.ws = {
-        agent: new HttpsProxyAgent(proxyUrl)
+        agent: new HttpsProxyAgent(proxyUrl),
       };
     }
 
@@ -114,6 +118,14 @@ export class DiscordChannel implements Channel {
           await this.opts.onVerify(chatJid, url);
         } else {
           await message.reply('Usage: `/verify https://your-app-url.com`');
+        }
+        return;
+      }
+
+      // Special Command: /push
+      if (content.startsWith('/push')) {
+        if (this.opts.onPush) {
+          await this.opts.onPush(chatJid);
         }
         return;
       }

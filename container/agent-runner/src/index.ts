@@ -29,9 +29,19 @@ interface ContainerOutput {
   error?: string;
 }
 
-const IPC_INPUT_DIR = '/workspace/ipc/input';
-const IPC_INPUT_CLOSE_SENTINEL = path.join(IPC_INPUT_DIR, '_close');
+let IPC_INPUT_DIR = '/workspace/ipc/input';
+let IPC_INPUT_CLOSE_SENTINEL = path.join(IPC_INPUT_DIR, '_close');
 const IPC_POLL_MS = 500;
+
+/**
+ * Resolve workspace root from the group folder path.
+ * In containers: groupFolder = /workspace/group → root = /workspace
+ * Physical: groupFolder = /path/to/groups/folder → root = groupFolder (self-contained)
+ */
+function resolveWorkspaceRoot(groupFolder: string): string {
+  if (groupFolder === '/workspace/group') return '/workspace';
+  return groupFolder;
+}
 
 const OUTPUT_START_MARKER = '---AQUACLAW_OUTPUT_START---';
 const OUTPUT_END_MARKER = '---AQUACLAW_OUTPUT_END---';
@@ -98,14 +108,15 @@ class ClaudeDriver implements Driver {
     let newSessionId: string | undefined;
     let lastAssistantUuid: string | undefined;
 
-    const globalClaudeMdPath = '/workspace/global/CLAUDE.md';
+    const wsRoot = resolveWorkspaceRoot(params.containerInput.groupFolder);
+    const globalClaudeMdPath = path.join(wsRoot, 'global', 'CLAUDE.md');
     let globalClaudeMd: string | undefined;
     if (!params.containerInput.isMain && fs.existsSync(globalClaudeMdPath)) {
       globalClaudeMd = fs.readFileSync(globalClaudeMdPath, 'utf-8');
     }
 
     const extraDirs: string[] = [];
-    const extraBase = '/workspace/extra';
+    const extraBase = path.join(wsRoot, 'extra');
     if (fs.existsSync(extraBase)) {
       for (const entry of fs.readdirSync(extraBase)) {
         const fullPath = path.join(extraBase, entry);
@@ -121,7 +132,7 @@ class ClaudeDriver implements Driver {
     for await (const message of query({
       prompt: stream,
       options: {
-        cwd: '/workspace/group',
+        cwd: params.containerInput.groupFolder,
         additionalDirectories: extraDirs.length > 0 ? extraDirs : undefined,
         resume: params.sessionId,
         resumeSessionAt: params.resumeAt,
@@ -195,17 +206,16 @@ class GeminiDriver implements Driver {
       const args = ['-p', params.prompt, '-y', '-o', 'stream-json'];
       if (params.sessionId) {
         args.push('--resume', params.sessionId);
-      } else {
-        args.push('--resume', 'latest');
       }
 
       log(`Spawning gemini CLI: gemini ${args.join(' ')}`);
       const child = spawn('gemini', args, {
-        cwd: '/workspace/group',
+        cwd: params.containerInput.groupFolder,
         env: { ...params.sdkEnv, ...process.env }
       });
 
       let newSessionId: string | undefined;
+      let assistantContent: string | undefined;
       let buffer = '';
 
       child.stdout.on('data', (data) => {
@@ -217,12 +227,29 @@ class GeminiDriver implements Driver {
           if (!line.trim()) continue;
           try {
             const parsed = JSON.parse(line);
-            if (parsed.session_id) newSessionId = parsed.session_id;
+            // stream-json format:
+            // {"type":"init","session_id":"..."}
+            // {"type":"message","role":"assistant","content":"..."}
+            // {"type":"result","status":"success","stats":{...}}
+            if (parsed.type === 'init' && parsed.session_id) {
+              newSessionId = parsed.session_id;
+            }
+            if (parsed.type === 'message' && parsed.role === 'assistant' && parsed.content) {
+              assistantContent = parsed.content;
+            }
+            if (parsed.type === 'result') {
+              params.onResult({
+                status: 'success',
+                result: assistantContent || null,
+                newSessionId
+              });
+            }
+            // Also support legacy -o json format
             if (parsed.response) {
               params.onResult({
                 status: 'success',
                 result: parsed.response,
-                newSessionId
+                newSessionId: parsed.session_id || newSessionId,
               });
             }
           } catch (err) {
@@ -431,6 +458,11 @@ async function main(): Promise<void> {
   for (const [key, value] of Object.entries(containerInput.secrets || {})) {
     sdkEnv[key] = value;
   }
+
+  // Resolve IPC paths based on actual groupFolder
+  const wsRoot = resolveWorkspaceRoot(containerInput.groupFolder);
+  IPC_INPUT_DIR = path.join(wsRoot, 'ipc', 'input');
+  IPC_INPUT_CLOSE_SENTINEL = path.join(IPC_INPUT_DIR, '_close');
 
   let sessionId = containerInput.sessionId;
   fs.mkdirSync(IPC_INPUT_DIR, { recursive: true });
