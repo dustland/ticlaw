@@ -11,11 +11,7 @@ import { ASSISTANT_NAME } from '../config.js';
 
 const HOME_DIR = os.homedir();
 export const FACTORY_DIR = path.join(HOME_DIR, 'aquaclaw', 'factory');
-export const ENV_CONFIG_DIR = path.join(
-  process.cwd(),
-  'config',
-  'environments',
-);
+export const ENV_CONFIG_DIR = path.join(process.cwd(), 'config', 'environments');
 
 export interface WorkspaceConfig {
   id: string; // Typically the Discord thread ID
@@ -82,7 +78,29 @@ export class AcWorkspace {
   }
 
   /**
-   * Automates the environment preparation: clone, env seeding, and bootstrapping.
+   * Recursive directory copy for environment seeding.
+   */
+  private copyFolderRecursive(src: string, dest: string): void {
+    if (!fs.existsSync(dest)) {
+      fs.mkdirSync(dest, { recursive: true });
+    }
+
+    const entries = fs.readdirSync(src, { withFileTypes: true });
+
+    for (const entry of entries) {
+      const srcPath = path.join(src, entry.name);
+      const destPath = path.join(dest, entry.name);
+
+      if (entry.isDirectory()) {
+        this.copyFolderRecursive(srcPath, destPath);
+      } else {
+        fs.copyFileSync(srcPath, destPath);
+      }
+    }
+  }
+
+  /**
+   * Automates the environment preparation: clone, granular env seeding, and bootstrapping.
    */
   async autoBootstrap(): Promise<{ success: boolean; log: string }> {
     logger.info({ url: this.config.githubUrl }, 'Starting auto-bootstrap');
@@ -105,27 +123,33 @@ export class AcWorkspace {
         }
       }
 
-      // 2. Seed .env
-      // We look for a file in config/environments/ matching the repo name (e.g., user-repo.env)
+      // 2. Granular Seeding (Monorepo Aware)
       if (this.config.githubUrl) {
-        const repoName =
-          this.config.githubUrl.split('/').pop()?.replace('.git', '') ||
-          'default';
-        const seedEnvPath = path.join(ENV_CONFIG_DIR, `${repoName}.env`);
-        const targetEnvPath = path.join(this.rootDir, '.env');
+        const repoName = this.config.githubUrl
+          .split('/')
+          .pop()
+          ?.replace('.git', '') || 'default';
+        const seedRepoDir = path.join(ENV_CONFIG_DIR, repoName);
 
-        if (fs.existsSync(seedEnvPath)) {
-          log(`Seeding .env from ${seedEnvPath}`);
-          fs.copyFileSync(seedEnvPath, targetEnvPath);
+        if (fs.existsSync(seedRepoDir) && fs.statSync(seedRepoDir).isDirectory()) {
+          log(`Detected granular environment seeds in ${seedRepoDir}. Overlaying...`);
+          this.copyFolderRecursive(seedRepoDir, this.rootDir);
         } else {
-          log(`No pre-defined .env found for ${repoName} in ${ENV_CONFIG_DIR}`);
-          // Fallback: check if .env.example exists and copy it
-          if (fs.existsSync(path.join(this.rootDir, '.env.example'))) {
-            log('Creating .env from .env.example');
-            fs.copyFileSync(
-              path.join(this.rootDir, '.env.example'),
-              targetEnvPath,
-            );
+          // Fallback to single-file seed if it exists (legacy)
+          const seedEnvPath = path.join(ENV_CONFIG_DIR, `${repoName}.env`);
+          if (fs.existsSync(seedEnvPath)) {
+            log(`Seeding root .env from ${seedEnvPath}`);
+            fs.copyFileSync(seedEnvPath, path.join(this.rootDir, '.env'));
+          } else {
+            log(`No granular or root environment seed found for ${repoName}.`);
+            // Check for .env.example fallback in the repo
+            if (fs.existsSync(path.join(this.rootDir, '.env.example'))) {
+              log('Creating root .env from .env.example');
+              fs.copyFileSync(
+                path.join(this.rootDir, '.env.example'),
+                path.join(this.rootDir, '.env'),
+              );
+            }
           }
         }
       }
