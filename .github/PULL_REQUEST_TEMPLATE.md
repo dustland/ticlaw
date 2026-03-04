@@ -1,14 +1,10 @@
-## Type of Change
-
-- [ ] **Skill** - adds a new skill in `skills/`
-- [ ] **Fix** - bug fix or security fix to source code
-- [ ] **Simplification** - reduces or simplifies source code
-
 ## Description
 
+<!-- Briefly describe the change and its motivation -->
 
-## For Skills
+## Type of Change
 
-- [ ] I have not made any changes to source code
-- [ ] My skill contains instructions for Claude to follow (not pre-built code)
-- [ ] I tested this skill on a fresh clone
+- [ ] Bug fix
+- [ ] New feature
+- [ ] Refactor / simplification
+- [ ] Documentation
