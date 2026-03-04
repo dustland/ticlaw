@@ -103,7 +103,7 @@ jobs:
       - name: Initialize skills system
         run: >-
           npx tsx -e
-          "import { initTiclawDir } from './skills-engine/index'; initTiclawDir();"
+          "import { initAquaclawDir } from './skills-engine/index'; initAquaclawDir();"
 
       - name: Apply skill
         run: npx tsx scripts/apply-skill.ts "skills/${{ matrix.skill }}"
