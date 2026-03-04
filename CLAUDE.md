@@ -1,4 +1,4 @@
-# AquaClaw
+# TiClaw
 
 Personal Claude assistant. See [README.md](README.md) for philosophy and setup. See [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md) for architecture decisions.
 
@@ -28,7 +28,7 @@ Single Node.js process with skill-based channel system. Channels (WhatsApp, Tele
 | `/setup` | First-time installation, authentication, service configuration |
 | `/customize` | Adding channels, integrations, changing behavior |
 | `/debug` | Container issues, logs, troubleshooting |
-| `/update-aquaclaw` | Bring upstream AquaClaw updates into a customized install |
+| `/update-ticlaw` | Bring upstream TiClaw updates into a customized install |
 | `/qodo-pr-resolver` | Fetch and fix Qodo PR review issues interactively or in batch |
 | `/get-qodo-rules` | Load org- and repo-level coding rules from Qodo before code tasks |
 
@@ -45,14 +45,14 @@ npm run build        # Compile TypeScript
 Service management:
 ```bash
 # macOS (launchd)
-launchctl load ~/Library/LaunchAgents/com.aquaclaw.plist
-launchctl unload ~/Library/LaunchAgents/com.aquaclaw.plist
-launchctl kickstart -k gui/$(id -u)/com.aquaclaw  # restart
+launchctl load ~/Library/LaunchAgents/com.ticlaw.plist
+launchctl unload ~/Library/LaunchAgents/com.ticlaw.plist
+launchctl kickstart -k gui/$(id -u)/com.ticlaw  # restart
 
 # Linux (systemd)
-systemctl --user start aquaclaw
-systemctl --user stop aquaclaw
-systemctl --user restart aquaclaw
+systemctl --user start ticlaw
+systemctl --user stop ticlaw
+systemctl --user restart ticlaw
 ```
 
 ## Troubleshooting

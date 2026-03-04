@@ -6,7 +6,7 @@ import fs from 'fs';
 import os from 'os';
 
 describe('Executor Feature', () => {
-  const sessionId = `ac-executor-test-${Date.now()}`;
+  const sessionId = `tc-executor-test-${Date.now()}`;
   const testDir = path.join(os.tmpdir(), sessionId);
   const dummyCliPath = path.join(testDir, 'dummy-cli.js');
   const group: RegisteredProject = {

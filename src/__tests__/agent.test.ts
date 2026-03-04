@@ -44,7 +44,7 @@ describe('Agent Orchestrator', () => {
     group: {
       name: 'tiwater/ticos',
       folder: 'tiwater-ticos',
-      trigger: '@AC',
+      trigger: '@TC',
       added_at: new Date().toISOString(),
       isMain: false,
     },
@@ -75,7 +75,7 @@ describe('Agent Orchestrator', () => {
     expect(ai.generateText).toHaveBeenCalled();
     const callArgs = vi.mocked(ai.generateText).mock.calls[0][0];
 
-    expect((callArgs as any).system).toContain('You are AquaClaw');
+    expect((callArgs as any).system).toContain('You are TiClaw');
     expect((callArgs as any).tools).toHaveProperty('executorTool');
     expect((callArgs as any).tools).toHaveProperty('workspaceTool');
 

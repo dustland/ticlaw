@@ -8,7 +8,7 @@
 
 ## Skills
 
-A skill is a markdown file in `skills/` that teaches an AI coding CLI (Gemini CLI, Claude Code, etc.) how to transform an AquaClaw installation.
+A skill is a markdown file in `skills/` that teaches an AI coding CLI (Gemini CLI, Claude Code, etc.) how to transform an TiClaw installation.
 
 A PR that contributes a skill should not modify any source files.
 

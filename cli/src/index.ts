@@ -1,16 +1,16 @@
 #!/usr/bin/env node
 
 /**
- * AquaClaw CLI — ac
+ * TiClaw CLI — tc
  *
  * Usage:
- *   ac bootstrap               First-time setup (interactive)
- *   ac start                    Start the AquaClaw service
- *   ac stop                     Stop the AquaClaw service
- *   ac status                   Show service state + detected CLIs
- *   ac skills list              List available skills
- *   ac skills add <name>        Apply a skill
- *   ac skills remove <name>     Uninstall a skill
+ *   tc bootstrap               First-time setup (interactive)
+ *   tc start                    Start the TiClaw service
+ *   tc stop                     Stop the TiClaw service
+ *   tc status                   Show service state + detected CLIs
+ *   tc skills list              List available skills
+ *   tc skills add <name>        Apply a skill
+ *   tc skills remove <name>     Uninstall a skill
  */
 
 import { Command } from 'commander';
@@ -22,8 +22,8 @@ import { registerEnvCommand } from './env.js';
 const program = new Command();
 
 program
-  .name('ac')
-  .description('AquaClaw CLI — bootstrap, manage skills, and control the service')
+  .name('tc')
+  .description('TiClaw CLI — bootstrap, manage skills, and control the service')
   .version('1.0.0');
 
 program
@@ -33,12 +33,12 @@ program
 
 program
   .command('start')
-  .description('Start the AquaClaw service')
+  .description('Start the TiClaw service')
   .action(start);
 
 program
   .command('stop')
-  .description('Stop the AquaClaw service')
+  .description('Stop the TiClaw service')
   .action(stop);
 
 program

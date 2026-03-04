@@ -1,10 +1,10 @@
 /**
- * `ac skills` — Manage AquaClaw skills.
+ * `tc skills` — Manage TiClaw skills.
  *
  * Subcommands:
- *   ac skills list              List available skills and their apply status
- *   ac skills add <name>        Apply a skill
- *   ac skills remove <name>     Uninstall a skill
+ *   tc skills list              List available skills and their apply status
+ *   tc skills add <name>        Apply a skill
+ *   tc skills remove <name>     Uninstall a skill
  */
 
 import { execSync } from 'child_process';
@@ -14,7 +14,7 @@ import type { Command } from 'commander';
 
 const PROJECT_ROOT = path.resolve(import.meta.dirname, '..', '..');
 const SKILLS_DIR = path.join(PROJECT_ROOT, 'skills');
-const STATE_PATH = path.join(PROJECT_ROOT, '.aquaclaw', 'state.json');
+const STATE_PATH = path.join(PROJECT_ROOT, '.ticlaw', 'state.json');
 
 interface SkillState {
   applied_skills?: Record<string, { applied_at: string; version: string }>;
@@ -96,7 +96,7 @@ function addSkill(name: string): void {
       stdio: 'inherit',
     });
     console.log(`\n  ✅ Skill "${name}" applied successfully.`);
-    console.log('  Run `pnpm run build` to rebuild, then `ac start` to restart.\n');
+    console.log('  Run `pnpm run build` to rebuild, then `tc start` to restart.\n');
   } catch {
     console.error(`\n  ❌ Failed to apply skill "${name}".`);
     process.exit(1);
@@ -114,7 +114,7 @@ function removeSkill(name: string): void {
       stdio: 'inherit',
     });
     console.log(`\n  ✅ Skill "${fullName}" removed.`);
-    console.log('  Run `pnpm run build` to rebuild, then `ac start` to restart.\n');
+    console.log('  Run `pnpm run build` to rebuild, then `tc start` to restart.\n');
   } catch {
     console.error(`\n  ❌ Failed to remove skill "${fullName}".`);
     process.exit(1);
@@ -124,7 +124,7 @@ function removeSkill(name: string): void {
 export function registerSkillsCommand(program: Command): void {
   const skills = program
     .command('skills')
-    .description('Manage AquaClaw skills');
+    .description('Manage TiClaw skills');
 
   skills
     .command('list')

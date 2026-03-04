@@ -1,10 +1,10 @@
 /**
- * `ac env` — Manage AquaClaw environments.
+ * `tc env` — Manage TiClaw environments.
  *
  * Subcommands:
- *   ac env add <name>       Create environment (repo + Discord channel + workspace)
- *   ac env list             List all environments
- *   ac env remove <name>    Remove an environment
+ *   tc env add <name>       Create environment (repo + Discord channel + workspace)
+ *   tc env list             List all environments
+ *   tc env remove <name>    Remove an environment
  */
 
 import { execSync } from 'child_process';
@@ -17,12 +17,12 @@ import type { Command } from 'commander';
 
 const PROJECT_ROOT = path.resolve(import.meta.dirname, '..', '..');
 const HOME_DIR = process.env.HOME || os.homedir();
-const AQUACLAW_HOME = path.join(HOME_DIR, 'aquaclaw');
-const WORKSPACES_DIR = path.join(AQUACLAW_HOME, 'workspaces');
-const ENVS_DIR = path.join(AQUACLAW_HOME, 'envs');
-const CONFIG_PATH = path.join(AQUACLAW_HOME, 'config.yaml');
-const STORE_DIR = path.join(AQUACLAW_HOME, 'store');
-const GROUPS_DIR = path.join(AQUACLAW_HOME, 'groups');
+const TICLAW_HOME = path.join(HOME_DIR, 'ticlaw');
+const WORKSPACES_DIR = path.join(TICLAW_HOME, 'workspaces');
+const ENVS_DIR = path.join(TICLAW_HOME, 'envs');
+const CONFIG_PATH = path.join(TICLAW_HOME, 'config.yaml');
+const STORE_DIR = path.join(TICLAW_HOME, 'store');
+const GROUPS_DIR = path.join(TICLAW_HOME, 'groups');
 
 function prompt(question: string, defaultValue?: string): Promise<string> {
   const rl = readline.createInterface({
@@ -92,7 +92,7 @@ function getDiscordToken(): string | null {
   const config = readConfig();
   return (
     config.channels?.discord?.token ||
-    process.env.AC_DISCORD_TOKEN ||
+    process.env.TC_DISCORD_TOKEN ||
     process.env.DISCORD_BOT_TOKEN ||
     null
   );
@@ -203,7 +203,7 @@ async function addEnv(name: string): Promise<void> {
             body: JSON.stringify({
               name: name,
               type: 0, // GUILD_TEXT
-              topic: `AquaClaw environment: ${repoFullName}@${branch}`,
+              topic: `TiClaw environment: ${repoFullName}@${branch}`,
             }),
           },
         );
@@ -223,7 +223,7 @@ async function addEnv(name: string): Promise<void> {
                 'Content-Type': 'application/json',
               },
               body: JSON.stringify({
-                content: `🦀 **AquaClaw Environment Ready**\n\n` +
+                content: `🦀 **TiClaw Environment Ready**\n\n` +
                   `**Repo:** ${repoFullName}\n` +
                   `**Branch:** ${branch}\n` +
                   `**Workspace:** \`${workspaceDir}\`\n\n` +
@@ -322,7 +322,7 @@ async function addEnv(name: string): Promise<void> {
 
 function listEnvs(): void {
   if (!fs.existsSync(ENVS_DIR)) {
-    console.log('\n  No environments configured. Run `ac env add <name>` to create one.\n');
+    console.log('\n  No environments configured. Run `tc env add <name>` to create one.\n');
     return;
   }
 
@@ -330,7 +330,7 @@ function listEnvs(): void {
   const envs = entries.filter((e) => e.isDirectory());
 
   if (envs.length === 0) {
-    console.log('\n  No environments configured. Run `ac env add <name>` to create one.\n');
+    console.log('\n  No environments configured. Run `tc env add <name>` to create one.\n');
     return;
   }
 
@@ -428,7 +428,7 @@ async function removeEnv(name: string): Promise<void> {
 export function registerEnvCommand(program: Command): void {
   const env = program
     .command('env')
-    .description('Manage AquaClaw environments (repo + channel + workspace)');
+    .description('Manage TiClaw environments (repo + channel + workspace)');
 
   env
     .command('add <name>')

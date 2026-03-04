@@ -1,12 +1,12 @@
-# AquaClaw (雪蟹) Requirements & Philosophy
+# TiClaw (雪蟹) Requirements & Philosophy
 
-This document outlines the foundational requirements and engineering principles for AquaClaw — a distributed AI R&D engine designed as a black-box core with a plugin ecosystem.
+This document outlines the foundational requirements and engineering principles for TiClaw — a distributed AI R&D engine designed as a black-box core with a plugin ecosystem.
 
 ---
 
 ## 🎯 The Mission: Professional R&D Engine
 
-AquaClaw is designed to be a **Distributed AI R&D Engine**. It transforms local hardware into an autonomous, transparent, and persistent AI collaborator capable of executing real-world engineering tasks.
+TiClaw is designed to be a **Distributed AI R&D Engine**. It transforms local hardware into an autonomous, transparent, and persistent AI collaborator capable of executing real-world engineering tasks.
 
 ---
 
@@ -16,16 +16,16 @@ AquaClaw is designed to be a **Distributed AI R&D Engine**. It transforms local 
 The codebase must remain readable by a single senior engineer. We avoid unnecessary abstraction layers. Logic flows linearly: **Request -> Factory -> Execution -> Relay**.
 
 ### 2. Black-Box Core + Plugin Ecosystem
-The engine core is a **closed, installable package** (`npm install -g aquaclaw`). Users never modify engine source code. Extensibility is achieved through:
-- **Channel plugins** — npm packages that implement the `Channel` interface (e.g., `@aquaclaw/channel-discord`, `@aquaclaw/channel-telegram`)
+The engine core is a **closed, installable package** (`npm install -g ticlaw`). Users never modify engine source code. Extensibility is achieved through:
+- **Channel plugins** — npm packages that implement the `Channel` interface (e.g., `@ticlaw/channel-discord`, `@ticlaw/channel-telegram`)
 - **CLI drivers** — pluggable agent backends (Gemini CLI, Claude Code, Codex)
 - **Configuration files** — not code changes
 
-This enables clean upgrades (`npm update aquaclaw`), broad adoption, and a healthy ecosystem.
+This enables clean upgrades (`npm update ticlaw`), broad adoption, and a healthy ecosystem.
 
 ### 3. Physical-First Isolation
-While we support containers for generic tasks, AquaClaw prioritizes **Physical Workspace Isolation**.
-- Every task lives in a dedicated directory: `~/aquaclaw/factory/{id}`.
+While we support containers for generic tasks, TiClaw prioritizes **Physical Workspace Isolation**.
+- Every task lives in a dedicated directory: `~/ticlaw/factory/{id}`.
 - This provides the AI native access to host toolchains (Node, Go, Rust, etc.) while preventing cross-task contamination.
 
 ### 4. Channel-Agnostic Control Plane
@@ -45,7 +45,7 @@ To ensure provider resilience, the coding agent logic is abstracted into a **Dri
 
 ### A. Automated Workspace "The Factory"
 - **Workspace Orchestration:** A standardized flow to clone, branch, and bootstrap any GitHub repository.
-- **Environment Seeding:** Granular, recursive `.env` seeding from `~/aquaclaw/config/environments/` to support complex monorepos.
+- **Environment Seeding:** Granular, recursive `.env` seeding from `~/ticlaw/config/environments/` to support complex monorepos.
 - **Auto-Bootstrap:** Automatic detection and execution of project-specific setup scripts and package managers.
 
 ### B. Deep Observability (The Audit Trail)
@@ -69,14 +69,14 @@ The engine extends through **skills** — self-contained packages that combine a
 | Extension Point | Mechanism | Example |
 |----------------|-----------|---------|
 | **Channels** | Skill with `Channel` implementation | `skills/add-discord/` — adds Discord connectivity |
-| **CLI Drivers** | Config (`AC_CODING_CLI`) | `AC_CODING_CLI=gemini-cli` switches the agent backend |
+| **CLI Drivers** | Config (`TC_CODING_CLI`) | `TC_CODING_CLI=gemini-cli` switches the agent backend |
 | **MCP Tools** | Standard MCP config | MCP server discovery and tool calling |
 
 Skills are the primary extensibility mechanism. Adding a new channel means creating a skill that provides a `Channel` implementation, handles credential setup, and self-registers at startup.
 
 ### Data Decentralization
-All transient data, databases, and logs must reside in **`~/aquaclaw/`**, keeping the source repository strictly for engine logic.
+All transient data, databases, and logs must reside in **`~/ticlaw/`**, keeping the source repository strictly for engine logic.
 
 ---
 
-*AquaClaw: Built for the future of autonomous engineering teams.*
+*TiClaw: Built for the future of autonomous engineering teams.*

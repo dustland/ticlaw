@@ -13,7 +13,7 @@ export function readSecrets(): Record<string, string> {
     'ANTHROPIC_AUTH_TOKEN',
     'ANTHROPIC_MODEL',
     'OPENROUTER_API_KEY',
-    'AC_MODEL',
+    'TC_MODEL',
   ]);
 
   if (secrets.OPENROUTER_API_KEY) {
@@ -23,13 +23,13 @@ export function readSecrets(): Record<string, string> {
     if (!secrets.ANTHROPIC_BASE_URL) {
       secrets.ANTHROPIC_BASE_URL = 'https://openrouter.ai/api/v1';
     }
-    if (secrets.AC_MODEL) {
-      secrets.ANTHROPIC_MODEL = secrets.AC_MODEL;
+    if (secrets.TC_MODEL) {
+      secrets.ANTHROPIC_MODEL = secrets.TC_MODEL;
     } else if (!secrets.ANTHROPIC_MODEL) {
       secrets.ANTHROPIC_MODEL = 'anthropic/claude-3.5-sonnet';
     }
-  } else if (secrets.AC_MODEL && !secrets.ANTHROPIC_MODEL) {
-    secrets.ANTHROPIC_MODEL = secrets.AC_MODEL;
+  } else if (secrets.TC_MODEL && !secrets.ANTHROPIC_MODEL) {
+    secrets.ANTHROPIC_MODEL = secrets.TC_MODEL;
   }
 
   return secrets;

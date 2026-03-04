@@ -4,7 +4,7 @@ import { execSync } from 'child_process';
 import path from 'path';
 import fs from 'fs';
 
-import { AQUACLAW_HOME, ASSISTANT_NAME } from '../core/config.js';
+import { TICLAW_HOME, ASSISTANT_NAME } from '../core/config.js';
 import { logger } from '../core/logger.js';
 import { RegisteredProject } from '../core/types.js';
 
@@ -41,7 +41,7 @@ export const buildWorkspaceTool = (
         }
         const [owner, repo] = parts;
         const folderName = `${owner}-${repo}`;
-        const cloneDir = path.join(AQUACLAW_HOME, 'factory', folderName);
+        const cloneDir = path.join(TICLAW_HOME, 'factory', folderName);
 
         if (operation === 'delete') {
           if (fs.existsSync(cloneDir)) {

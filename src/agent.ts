@@ -17,7 +17,7 @@ function getOpenRouter(): ReturnType<typeof createOpenRouter> {
 
   if (!apiKey) {
     throw new Error(
-      'OPENROUTER_API_KEY not configured. Add it to ~/aquaclaw/config.yaml under llm.api_key',
+      'OPENROUTER_API_KEY not configured. Add it to ~/ticlaw/config.yaml under llm.api_key',
     );
   }
 
@@ -74,7 +74,7 @@ export async function runAgentOrchestrator(opts: {
     opts.registeredProjects,
   );
 
-  const systemPrompt = `You are AquaClaw 🦀, a Discord-based coding agent orchestrator.
+  const systemPrompt = `You are TiClaw 🦀, a Discord-based coding agent orchestrator.
 You manage tasks for the current repository "${opts.group.name}".
 
 You have tools available to delegate work:

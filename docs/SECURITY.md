@@ -1,4 +1,4 @@
-# AquaClaw Security Model
+# TiClaw Security Model
 
 ## Trust Model
 
@@ -23,7 +23,7 @@ This is the primary security boundary. Rather than relying on application-level 
 
 ### 2. Mount Security
 
-**External Allowlist** - Mount permissions stored at `~/.config/aquaclaw/mount-allowlist.json`, which is:
+**External Allowlist** - Mount permissions stored at `~/.config/ticlaw/mount-allowlist.json`, which is:
 - Outside project root
 - Never mounted into containers
 - Cannot be modified by agents

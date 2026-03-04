@@ -10,7 +10,7 @@ import { readEnvFile } from './env.js';
 const envConfig = readEnvFile([
   'ASSISTANT_NAME',
   'ASSISTANT_HAS_OWN_NUMBER',
-  'AC_CODING_CLI',
+  'TC_CODING_CLI',
 ]);
 
 export const ASSISTANT_NAME =
@@ -18,32 +18,32 @@ export const ASSISTANT_NAME =
 export const ASSISTANT_HAS_OWN_NUMBER =
   (process.env.ASSISTANT_HAS_OWN_NUMBER ||
     envConfig.ASSISTANT_HAS_OWN_NUMBER) === 'true';
-export const AC_CODING_CLI =
-  process.env.AC_CODING_CLI || envConfig.AC_CODING_CLI || 'gemini-cli';
+export const TC_CODING_CLI =
+  process.env.TC_CODING_CLI || envConfig.TC_CODING_CLI || 'gemini-cli';
 export const POLL_INTERVAL = 2000;
 export const SCHEDULER_POLL_INTERVAL = 60000;
 
-// Absolute paths for AquaClaw data management
+// Absolute paths for TiClaw data management
 const HOME_DIR = process.env.HOME || os.homedir();
-export const AQUACLAW_HOME = path.join(HOME_DIR, 'aquaclaw');
+export const TICLAW_HOME = path.join(HOME_DIR, 'ticlaw');
 
 // Ensure base directory exists
-if (!fs.existsSync(AQUACLAW_HOME)) {
-  fs.mkdirSync(AQUACLAW_HOME, { recursive: true });
+if (!fs.existsSync(TICLAW_HOME)) {
+  fs.mkdirSync(TICLAW_HOME, { recursive: true });
 }
 
 export const MOUNT_ALLOWLIST_PATH = path.join(
   HOME_DIR,
   '.config',
-  'aquaclaw',
+  'ticlaw',
   'mount-allowlist.json',
 );
-export const STORE_DIR = path.join(AQUACLAW_HOME, 'store');
-export const GROUPS_DIR = path.join(AQUACLAW_HOME, 'groups');
-export const DATA_DIR = path.join(AQUACLAW_HOME, 'data');
+export const STORE_DIR = path.join(TICLAW_HOME, 'store');
+export const GROUPS_DIR = path.join(TICLAW_HOME, 'groups');
+export const DATA_DIR = path.join(TICLAW_HOME, 'data');
 
 export const CONTAINER_IMAGE =
-  process.env.CONTAINER_IMAGE || 'aquaclaw-agent:latest';
+  process.env.CONTAINER_IMAGE || 'ticlaw-agent:latest';
 export const CONTAINER_TIMEOUT = parseInt(
   process.env.CONTAINER_TIMEOUT || '1800000',
   10,

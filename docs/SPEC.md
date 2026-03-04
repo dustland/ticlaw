@@ -1,4 +1,4 @@
-# AquaClaw Specification
+# TiClaw Specification
 
 A distributed AI R&D engine with multi-channel support, physical workspace isolation, automated observability, and multi-CLI agent execution. Supports Gemini CLI (default), Claude Code, and Codex.
 
@@ -10,7 +10,7 @@ A distributed AI R&D engine with multi-channel support, physical workspace isola
 |-------|-----------|---------|
 | Runtime | Node.js 20+ | Host process for routing and scheduling |
 | Agent | Multi-CLI (Gemini CLI default, Claude Code, Codex) | Run AI agent with tools and MCP servers |
-| Workspace | Physical directories (`~/aquaclaw/factory/`) | Isolated per-task work environments |
+| Workspace | Physical directories (`~/ticlaw/factory/`) | Isolated per-task work environments |
 | Persistence | Tmux sessions | Agent survives host process restarts |
 | Observability | Gemini 2.0 Flash + Playwright | Delta feed summaries and UI verification |
 | Channel | Channel registry (`src/channels/registry.ts`) | Channels self-register at startup |
@@ -21,9 +21,9 @@ A distributed AI R&D engine with multi-channel support, physical workspace isola
 
 ## Architecture Overview
 
-AquaClaw operates in two execution modes selected at runtime:
+TiClaw operates in two execution modes selected at runtime:
 
-1. **Physical Mode** (default) — Agent runs directly on the host in a Tmux session within a physical workspace (`~/aquaclaw/factory/{id}/`). Provides native toolchain access.
+1. **Physical Mode** (default) — Agent runs directly on the host in a Tmux session within a physical workspace (`~/ticlaw/factory/{id}/`). Provides native toolchain access.
 2. **Container Mode** (fallback) — Agent runs inside a Linux container. Used when container runtime is available and desired for stronger isolation.
 
 ### System Diagram
@@ -33,7 +33,7 @@ AquaClaw operates in two execution modes selected at runtime:
          │
          ▼
    ┌──────────────────────────┐
-   │  AquaClaw Host Process    │
+   │  TiClaw Host Process    │
    │  (src/index.ts)           │
    │                           │
    │  ┌─────────────────────┐  │
@@ -55,7 +55,7 @@ AquaClaw operates in two execution modes selected at runtime:
    │  │  runAgent()         │  │
    │  │  ┌───────────────┐  │  │
    │  │  │ Physical Mode │  │  │
-   │  │  │ AcWorkspace   │◄─┼──┼── /verify, /push, /skill
+   │  │  │ TcWorkspace   │◄─┼──┼── /verify, /push, /skill
    │  │  │ + TmuxBridge  │  │  │
    │  │  └───────────────┘  │  │
    │  │  ┌───────────────┐  │  │
@@ -120,7 +120,7 @@ Channels are added via skills. Each channel skill:
 ## Folder Structure
 
 ```
-aquaclaw/                              # Project root (source code)
+ticlaw/                              # Project root (source code)
 ├── CLAUDE.md / GEMINI.md              # Project context for AI coding CLIs
 ├── docs/
 │   ├── SPEC.md                        # This specification document
@@ -150,7 +150,7 @@ aquaclaw/                              # Project root (source code)
 │   │   ├── registry.ts               # Channel factory registry
 │   │   └── discord.ts                # Discord channel (reference implementation)
 │   └── executor/
-│       ├── workspace.ts               # AcWorkspace — physical workspace manager
+│       ├── workspace.ts               # TcWorkspace — physical workspace manager
 │       ├── tmux-bridge.ts             # TmuxBridge — persistent agent sessions
 │       ├── diff-summarizer.ts         # Gemini-powered git diff summaries
 │       └── playwright-verifier.ts     # Playwright UI verification
@@ -169,11 +169,11 @@ aquaclaw/                              # Project root (source code)
 │   └── ...                            # Other skills
 │
 ├── launchd/
-│   └── com.aquaclaw.plist             # macOS launchd service definition
+│   └── com.ticlaw.plist             # macOS launchd service definition
 │
 └── .env                               # Environment configuration (gitignored)
 
-~/aquaclaw/                            # Runtime data (outside project root)
+~/ticlaw/                            # Runtime data (outside project root)
 ├── factory/                           # Physical workspaces (one per task)
 │   ├── {thread-id}/                   # Workspace for a Discord thread
 │   │   ├── .git/                      # Cloned repository
@@ -196,21 +196,21 @@ aquaclaw/                              # Project root (source code)
 │       ├── {repo-name}.env            # Root .env seed
 │       └── {repo-name}/              # Granular env overlay (recursive copy)
 └── logs/
-    └── aquaclaw.log                   # Service log
+    └── ticlaw.log                   # Service log
 ```
 
 ---
 
-## Physical Mode (AcWorkspace + TmuxBridge)
+## Physical Mode (TcWorkspace + TmuxBridge)
 
 Physical mode is the primary execution model. Each task gets an isolated workspace on the host filesystem.
 
 ### Workspace Lifecycle
 
-1. **Creation** — `AcWorkspace` creates `~/aquaclaw/factory/{id}/` with subdirectories (`screenshots/`, `logs/`, `ipc/`)
+1. **Creation** — `TcWorkspace` creates `~/ticlaw/factory/{id}/` with subdirectories (`screenshots/`, `logs/`, `ipc/`)
 2. **Bootstrap** (if GitHub URL provided):
    - `git clone` → branch checkout
-   - Environment seeding from `~/aquaclaw/config/environments/`
+   - Environment seeding from `~/ticlaw/config/environments/`
    - Auto-detect and run setup scripts (`setup.sh`, `bootstrap.sh`, `init.sh`)
    - Auto-detect package manager (`pnpm install` or `npm install`)
 3. **File Watching** — `chokidar` monitors the workspace, excluding `node_modules/`, `.git/`, `dist/`, `logs/`
@@ -219,10 +219,10 @@ Physical mode is the primary execution model. Each task gets an isolated workspa
 
 ### Environment Seeding
 
-For repositories with complex environment requirements (e.g., monorepos), AquaClaw supports granular environment seeding:
+For repositories with complex environment requirements (e.g., monorepos), TiClaw supports granular environment seeding:
 
 ```
-~/aquaclaw/config/environments/
+~/ticlaw/config/environments/
 ├── my-project.env              # Simple: copies to workspace root as .env
 └── my-monorepo/                # Granular: recursively overlays the workspace
     ├── .env                    # Root .env
@@ -234,7 +234,7 @@ For repositories with complex environment requirements (e.g., monorepos), AquaCl
 
 | Feature | Component | How It Works |
 |---------|-----------|-------------|
-| **Delta Feed** | `DiffSummarizer` | Runs `git diff HEAD`, sends to Gemini 2.0 Flash for a one-sentence summary. Throttled to 1/minute. Requires `AC_GEMINI_API_KEY`. |
+| **Delta Feed** | `DiffSummarizer` | Runs `git diff HEAD`, sends to Gemini 2.0 Flash for a one-sentence summary. Throttled to 1/minute. Requires `TC_GEMINI_API_KEY`. |
 | **Screenshot Relay** | `chokidar` watcher | New files in `screenshots/` are automatically sent to the channel as media. |
 | **UI Verification** | `PlaywrightVerifier` | Captures full-page screenshots of a URL using headless Chromium (1280×800). Triggered by `/verify` command. |
 
@@ -245,7 +245,7 @@ The `/push` command triggers `workspace.push()`:
 1. Collects conversation history from SQLite
 2. Generates a diff summary via DiffSummarizer
 3. Runs `gh pr create` with an auto-generated title and body
-4. If `AC_PREVIEW_URL_PATTERN` is set (e.g., `https://app-pr-${PR_NUMBER}.onrender.com`), includes a live preview URL
+4. If `TC_PREVIEW_URL_PATTERN` is set (e.g., `https://app-pr-${PR_NUMBER}.onrender.com`), includes a live preview URL
 
 ### Port Isolation
 
@@ -255,18 +255,18 @@ The `/push` command triggers `workspace.push()`:
 
 ## Agent CLI Authentication
 
-Configure authentication in a `.env` file in the project root. The default CLI is Gemini (set via `AC_CODING_CLI`).
+Configure authentication in a `.env` file in the project root. The default CLI is Gemini (set via `TC_CODING_CLI`).
 
 **Gemini CLI** (default — uses Google One AI Premium subscription):
 ```bash
 # Login once with: gemini login
 # No API key needed — uses your Google account
-AC_CODING_CLI=gemini-cli
+TC_CODING_CLI=gemini-cli
 ```
 
 **Claude Code** (requires Anthropic API key or subscription):
 ```bash
-AC_CODING_CLI=claude
+TC_CODING_CLI=claude
 CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-...
 # Or: ANTHROPIC_API_KEY=sk-ant-api03-...
 ```
@@ -284,14 +284,14 @@ The trigger pattern is auto-generated as `@{ASSISTANT_NAME}` (case-insensitive).
 
 ## Memory System
 
-AquaClaw uses a hierarchical memory system based on instruction files (CLAUDE.md / GEMINI.md).
+TiClaw uses a hierarchical memory system based on instruction files (CLAUDE.md / GEMINI.md).
 
 ### Memory Hierarchy
 
 | Level | File | Scope | Writable From |
 |-------|------|-------|---------------|
-| Global | `~/aquaclaw/groups/CLAUDE.md` | All groups | Main group only |
-| Group | `~/aquaclaw/groups/{name}/CLAUDE.md` | One group | That group |
+| Global | `~/ticlaw/groups/CLAUDE.md` | All groups | Main group only |
+| Group | `~/ticlaw/groups/{name}/CLAUDE.md` | One group | That group |
 
 The AI coding CLI automatically loads project instructions:
 - `../CLAUDE.md` or `../GEMINI.md` (parent directory = global memory)
@@ -308,7 +308,7 @@ Sessions enable conversation continuity — the agent remembers what you talked 
 1. Each group has a session ID tracked in SQLite (`sessions` table)
 2. Session ID is passed to the agent CLI's resume option
 3. The agent continues the conversation with full context
-4. Session transcripts are stored in `~/aquaclaw/data/sessions/{group}/.claude/`
+4. Session transcripts are stored in `~/ticlaw/data/sessions/{group}/.claude/`
 
 In physical mode, tmux sessions provide additional persistence — the agent survives process restarts.
 
@@ -337,11 +337,11 @@ In physical mode, tmux sessions provide additional persistence — the agent sur
    │
    ▼
 6. runAgent() dispatches to:
-   ├── Physical mode: AcWorkspace + TmuxBridge
-   │   ├── Create/reuse workspace in ~/aquaclaw/factory/{id}/
+   ├── Physical mode: TcWorkspace + TmuxBridge
+   │   ├── Create/reuse workspace in ~/ticlaw/factory/{id}/
    │   ├── Spawn tmux session running agent-runner
    │   ├── Stream output via tmux capture-pane polling
-   │   └── Parse AQUACLAW_OUTPUT markers for structured results
+   │   └── Parse TICLAW_OUTPUT markers for structured results
    │
    └── Container mode (fallback): container-runner.ts
        ├── Spawn Linux container with volume mounts
@@ -373,7 +373,7 @@ Users can ask the agent to schedule recurring or one-time tasks from any group.
 
 ### MCP Tools Available to Agent
 
-The `aquaclaw` MCP server exposes these tools inside the agent:
+The `ticlaw` MCP server exposes these tools inside the agent:
 
 | Tool | Description |
 |------|-------------|
@@ -414,7 +414,7 @@ Groups are registered in SQLite with:
 
 ## Database Schema
 
-SQLite database at `~/aquaclaw/store/messages.db`:
+SQLite database at `~/ticlaw/store/messages.db`:
 
 | Table | Purpose |
 |-------|---------|
@@ -434,12 +434,12 @@ SQLite database at `~/aquaclaw/store/messages.db`:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `AC_CODING_CLI` | `gemini-cli` | AI CLI to use (`gemini-cli`, `claude`, `codex`) |
+| `TC_CODING_CLI` | `gemini-cli` | AI CLI to use (`gemini-cli`, `claude`, `codex`) |
 | `ASSISTANT_NAME` | `Andy` | Trigger name and response prefix |
 | `ASSISTANT_HAS_OWN_NUMBER` | `false` | Solo chat mode (no trigger needed) |
-| `AC_GEMINI_API_KEY` | — | Gemini API key for Delta Feed summaries |
-| `AC_PREVIEW_URL_PATTERN` | — | Preview URL template (e.g., `https://app-pr-${PR_NUMBER}.onrender.com`) |
-| `CONTAINER_IMAGE` | `aquaclaw-agent:latest` | Container image for container mode |
+| `TC_GEMINI_API_KEY` | — | Gemini API key for Delta Feed summaries |
+| `TC_PREVIEW_URL_PATTERN` | — | Preview URL template (e.g., `https://app-pr-${PR_NUMBER}.onrender.com`) |
+| `CONTAINER_IMAGE` | `ticlaw-agent:latest` | Container image for container mode |
 | `CONTAINER_TIMEOUT` | `1800000` (30min) | Max container lifetime |
 | `IDLE_TIMEOUT` | `1800000` (30min) | Container idle timeout |
 | `MAX_CONCURRENT_CONTAINERS` | `5` | Max simultaneous agents |
@@ -457,26 +457,26 @@ SQLite database at `~/aquaclaw/store/messages.db`:
 
 ## Service Management
 
-AquaClaw runs as a macOS launchd service:
+TiClaw runs as a macOS launchd service:
 
 ```bash
 # Start
-launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.aquaclaw.plist
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.ticlaw.plist
 
 # Stop
-launchctl bootout gui/$(id -u)/com.aquaclaw
+launchctl bootout gui/$(id -u)/com.ticlaw
 
 # Restart
-launchctl kickstart -k gui/$(id -u)/com.aquaclaw
+launchctl kickstart -k gui/$(id -u)/com.ticlaw
 
 # Check status
-launchctl list | grep aquaclaw
+launchctl list | grep ticlaw
 
 # View logs
-tail -f ~/aquaclaw/logs/aquaclaw.log
+tail -f ~/ticlaw/logs/ticlaw.log
 
 # Rebuild after code changes
-npm run build && launchctl kickstart -k gui/$(id -u)/com.aquaclaw
+npm run build && launchctl kickstart -k gui/$(id -u)/com.ticlaw
 ```
 
 ---
@@ -485,11 +485,11 @@ npm run build && launchctl kickstart -k gui/$(id -u)/com.aquaclaw
 
 | Issue | Cause | Solution |
 |-------|-------|----------|
-| No response to messages | Service not running | Check `launchctl list \| grep aquaclaw` |
+| No response to messages | Service not running | Check `launchctl list \| grep ticlaw` |
 | Agent process exits with code 1 | Container runtime not available | Falls back to physical mode; check tmux sessions with `tmux ls` |
-| Agent process exits with code 1 | agent-runner not built | Run `pnpm --filter aquaclaw-agent-runner build` |
-| Session not continuing | Session ID not saved | Check SQLite: `sqlite3 ~/aquaclaw/store/messages.db "SELECT * FROM sessions"` |
-| No Delta Feed summaries | Missing API key | Set `AC_GEMINI_API_KEY` in `.env` |
+| Agent process exits with code 1 | agent-runner not built | Run `pnpm --filter ticlaw-agent-runner build` |
+| Session not continuing | Session ID not saved | Check SQLite: `sqlite3 ~/ticlaw/store/messages.db "SELECT * FROM sessions"` |
+| No Delta Feed summaries | Missing API key | Set `TC_GEMINI_API_KEY` in `.env` |
 | `/push` fails | GitHub CLI not authenticated | Run `gh auth login` |
 | `/verify` fails | Playwright not installed | Run `npx playwright install chromium` |
 | Channel skipped at startup | Missing credentials | Check logs for WARN — provide required env vars |

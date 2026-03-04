@@ -1,10 +1,10 @@
 /**
- * `ac bootstrap` — First-time AquaClaw setup.
+ * `tc bootstrap` — First-time TiClaw setup.
  *
  * Steps:
  * 1. Detect platform and installed coding CLIs
  * 2. Collect configuration (data dir, proxy, API keys)
- * 3. Write ~/aquaclaw/config.yaml
+ * 3. Write ~/ticlaw/config.yaml
  * 4. Apply initial channel skill (Discord)
  * 5. Build the project
  * 6. Install and start system service
@@ -20,8 +20,8 @@ import yaml from 'yaml';
 // Resolve project root (cli/ lives one level below root)
 const PROJECT_ROOT = path.resolve(import.meta.dirname, '..', '..');
 const HOME_DIR = process.env.HOME || os.homedir();
-const AQUACLAW_HOME = path.join(HOME_DIR, 'aquaclaw');
-const CONFIG_PATH = path.join(AQUACLAW_HOME, 'config.yaml');
+const TICLAW_HOME = path.join(HOME_DIR, 'ticlaw');
+const CONFIG_PATH = path.join(TICLAW_HOME, 'config.yaml');
 
 function prompt(question: string, defaultValue?: string): Promise<string> {
   const rl = readline.createInterface({
@@ -51,7 +51,7 @@ function detectCLIs(): Record<string, boolean> {
 }
 
 export async function bootstrap(): Promise<void> {
-  console.log('\n🦀 AquaClaw Bootstrap\n');
+  console.log('\n🦀 TiClaw Bootstrap\n');
 
   // 1. Detect platform
   const platform = process.platform === 'darwin' ? 'macOS' : 'Linux';
@@ -74,7 +74,7 @@ export async function bootstrap(): Promise<void> {
   console.log(`  Primary CLI: ${primaryCli || 'none (will need to install one)'}\n`);
 
   // 3. Collect configuration
-  const dataDir = await prompt('Data directory', AQUACLAW_HOME);
+  const dataDir = await prompt('Data directory', TICLAW_HOME);
   const httpProxy = await prompt('HTTP proxy (leave empty if not needed)', '');
   const githubRepo = await prompt('GitHub repo URL for first workspace', '');
   const discordToken = await prompt('Discord bot token (required for messaging)', '');
@@ -153,12 +153,12 @@ export async function bootstrap(): Promise<void> {
       });
       console.log('  ✅ Discord channel installed');
     } catch {
-      console.error('  ⚠️  Discord skill apply failed — you can retry with: ac skills add discord');
+      console.error('  ⚠️  Discord skill apply failed — you can retry with: tc skills add discord');
     }
   }
 
   // 7. Build
-  console.log('\n  🔨 Building AquaClaw...');
+  console.log('\n  🔨 Building TiClaw...');
   try {
     execSync('pnpm run build', {
       cwd: PROJECT_ROOT,
@@ -179,17 +179,17 @@ export async function bootstrap(): Promise<void> {
     });
     console.log('  ✅ Service installed and started');
   } catch {
-    console.error('  ⚠️  Service install failed. You can start manually with: ac start');
+    console.error('  ⚠️  Service install failed. You can start manually with: tc start');
   }
 
   // Done
-  console.log('\n  🦀 AquaClaw is ready!');
+  console.log('\n  🦀 TiClaw is ready!');
   console.log(`  Config: ${CONFIG_PATH}`);
   console.log(`  Data: ${dataDir}`);
   console.log(`  Primary CLI: ${primaryCli || 'gemini-cli'}`);
   if (discordToken) console.log('  Discord: enabled');
   console.log('\n  Next steps:');
   console.log('    • Send a message in your Discord channel to test');
-  console.log('    • Run `ac status` to verify service is running');
-  console.log('    • Run `ac skills list` to see available skills\n');
+  console.log('    • Run `tc status` to verify service is running');
+  console.log('    • Run `tc skills list` to see available skills\n');
 }

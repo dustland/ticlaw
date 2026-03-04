@@ -112,7 +112,7 @@ export class DiscordChannel implements Channel {
         content = content.replace(/^\/claw\s*/, '').trim();
         if (!content) {
           await message.reply(
-            'Just @mention me with your task! e.g. `@AquaClaw fix #198`',
+            'Just @mention me with your task! e.g. `@TiClaw fix #198`',
           );
           return;
         }
@@ -482,16 +482,16 @@ export class DiscordChannel implements Channel {
 }
 
 registerChannel('discord', (opts: ChannelOpts) => {
-  const envVars = readEnvFile(['DISCORD_BOT_TOKEN', 'AC_DISCORD_TOKEN']);
+  const envVars = readEnvFile(['DISCORD_BOT_TOKEN', 'TC_DISCORD_TOKEN']);
   const token =
-    process.env.AC_DISCORD_TOKEN ||
+    process.env.TC_DISCORD_TOKEN ||
     process.env.DISCORD_BOT_TOKEN ||
-    envVars.AC_DISCORD_TOKEN ||
+    envVars.TC_DISCORD_TOKEN ||
     envVars.DISCORD_BOT_TOKEN ||
     '';
 
   if (!token) {
-    logger.warn('Discord: AC_DISCORD_TOKEN not set');
+    logger.warn('Discord: TC_DISCORD_TOKEN not set');
     return null;
   }
   return new DiscordChannel(token, opts as DiscordChannelOpts);

@@ -11,9 +11,9 @@ export class TmuxBridge {
   private outputFile: string;
 
   constructor(sessionId: string, onData: (data: string) => void) {
-    this.sessionId = `ac-${sessionId}`;
+    this.sessionId = `tc-${sessionId}`;
     this.onData = onData;
-    this.outputFile = path.join(os.tmpdir(), `aquaclaw-${this.sessionId}.log`);
+    this.outputFile = path.join(os.tmpdir(), `ticlaw-${this.sessionId}.log`);
   }
 
   async createSession(cwd: string): Promise<void> {

@@ -8,11 +8,11 @@ describe('DiscordChannel E2E Network Test', () => {
 
   beforeAll(() => {
     // Attempt to get the token, skip tests if not available
-    const envVars = readEnvFile(['DISCORD_BOT_TOKEN', 'AC_DISCORD_TOKEN']);
+    const envVars = readEnvFile(['DISCORD_BOT_TOKEN', 'TC_DISCORD_TOKEN']);
     token =
-      process.env.AC_DISCORD_TOKEN ||
+      process.env.TC_DISCORD_TOKEN ||
       process.env.DISCORD_BOT_TOKEN ||
-      envVars.AC_DISCORD_TOKEN ||
+      envVars.TC_DISCORD_TOKEN ||
       envVars.DISCORD_BOT_TOKEN ||
       '';
   });
@@ -25,7 +25,7 @@ describe('DiscordChannel E2E Network Test', () => {
 
   it('connects to Discord API if token is provided', async () => {
     if (!token) {
-      console.log('Skipping E2E test: No AC_DISCORD_TOKEN provided');
+      console.log('Skipping E2E test: No TC_DISCORD_TOKEN provided');
       return;
     }
 

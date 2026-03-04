@@ -1,4 +1,4 @@
-# AquaClaw Skills Architecture
+# TiClaw Skills Architecture
 
 ## Core Principle
 
@@ -20,13 +20,13 @@ The goal is that Level 1 handles everything on a mature, well-tested installatio
 
 Many users clone the repo without forking, don't commit their changes, and don't think of themselves as git users. The system must work safely for them without requiring any git knowledge.
 
-Before any operation, the system copies all files that will be modified to `.aquaclaw/backup/`. On success, the backup is deleted. On failure, the backup is restored. This provides rollback safety regardless of whether the user commits, pushes, or understands git.
+Before any operation, the system copies all files that will be modified to `.ticlaw/backup/`. On success, the backup is deleted. On failure, the backup is restored. This provides rollback safety regardless of whether the user commits, pushes, or understands git.
 
 ---
 
 ## 1. The Shared Base
 
-`.aquaclaw/base/` holds the clean core — the original codebase before any skills or customizations were applied. This is the stable common ancestor for all three-way merges, and it only changes on core updates.
+`.ticlaw/base/` holds the clean core — the original codebase before any skills or customizations were applied. This is the stable common ancestor for all three-way merges, and it only changes on core updates.
 
 - `git merge-file` uses the base to compute two diffs: what the user changed (current vs base) and what the skill wants to change (base vs skill's modified file), then combines both
 - The base enables drift detection: if a file's hash differs from its base hash, something has been modified (skills, user customizations, or both)
@@ -121,9 +121,9 @@ skills/
 
 - `git merge-file` requires three full files — no intermediate reconstruction step
 - Git's three-way merge uses context matching, so it works even if the user has moved code around — unlike line-number-based diffs that break immediately
-- Auditable: `diff .aquaclaw/base/src/server.ts skills/add-whatsapp/modify/src/server.ts` shows exactly what the skill changes
+- Auditable: `diff .ticlaw/base/src/server.ts skills/add-whatsapp/modify/src/server.ts` shows exactly what the skill changes
 - Deterministic: same three inputs always produce the same merge result
-- Size is negligible since AquaClaw's core files are small
+- Size is negligible since TiClaw's core files are small
 
 ### Intent Files
 
@@ -190,7 +190,7 @@ depends: []                # Skills that must be applied first
 test: "npx vitest run src/channels/whatsapp.test.ts"
 
 # --- Future fields (not yet implemented in v0.1) ---
-# author: aquaclaw-team
+# author: ticlaw-team
 # license: MIT
 # min_skills_system_version: "0.1.0"
 # tested_with: [telegram@1.0.0]
@@ -243,7 +243,7 @@ Recorded in `state.yaml`:
 applied_skills:
   - skill: telegram
     version: 1.0.0
-    custom_patch: .aquaclaw/custom/telegram-group-only.patch
+    custom_patch: .ticlaw/custom/telegram-group-only.patch
     custom_patch_description: "Restrict bot responses to group chats only"
 ```
 
@@ -323,7 +323,7 @@ When a user runs the skill's slash command in AI coding CLI:
 
 ### Step 2: Backup
 
-Copy all files that will be modified to `.aquaclaw/backup/`. If the operation fails at any point, restore from backup.
+Copy all files that will be modified to `.ticlaw/backup/`. If the operation fails at any point, restore from backup.
 
 ### Step 3: File Operations
 
@@ -340,7 +340,7 @@ cp skills/add-whatsapp/add/src/channels/whatsapp.ts src/channels/whatsapp.ts
 For each file in `modifies` (with path remapping applied):
 
 ```bash
-git merge-file src/server.ts .aquaclaw/base/src/server.ts skills/add-whatsapp/modify/src/server.ts
+git merge-file src/server.ts .ticlaw/base/src/server.ts skills/add-whatsapp/modify/src/server.ts
 ```
 
 - **Exit code 0**: clean merge, move on
@@ -348,7 +348,7 @@ git merge-file src/server.ts .aquaclaw/base/src/server.ts skills/add-whatsapp/mo
 
 ### Step 6: Conflict Resolution (Three-Level)
 
-1. **Check shared resolution cache** (`.aquaclaw/resolutions/`) — load into local `git rerere` if a verified resolution exists for this skill combination. **Only apply if input hashes match exactly** (base hash + current hash + skill modified hash).
+1. **Check shared resolution cache** (`.ticlaw/resolutions/`) — load into local `git rerere` if a verified resolution exists for this skill combination. **Only apply if input hashes match exactly** (base hash + current hash + skill modified hash).
 2. **`git rerere`** — checks local cache. If found, applied automatically. Done.
 3. **AI coding CLI** — reads conflict markers + `SKILL.md` + `.intent.md` (Invariants, Must-keep sections) of current and previously applied skills. Resolves. `git rerere` caches the resolution.
 4. **User** — if AI coding CLI cannot determine intent, it asks the user for the desired behavior.
@@ -366,15 +366,15 @@ Collect all structured declarations (from this skill and any previously applied 
 ### Step 8: Post-Apply and Validate
 
 1. Run any `post_apply` commands (non-structured operations only)
-2. Update `.aquaclaw/state.yaml` — skill record, file hashes (base, skill, merged per file), structured outcomes
+2. Update `.ticlaw/state.yaml` — skill record, file hashes (base, skill, merged per file), structured outcomes
 3. **Run skill tests** — mandatory, even if all merges were clean
 4. If tests fail on a clean merge → escalate to Level 2 (AI coding CLI diagnoses the semantic conflict)
 
 ### Step 9: Clean Up
 
-If tests pass, delete `.aquaclaw/backup/`. The operation is complete.
+If tests pass, delete `.ticlaw/backup/`. The operation is complete.
 
-If tests fail and Level 2 can't resolve, restore from `.aquaclaw/backup/` and report the failure.
+If tests fail and Level 2 can't resolve, restore from `.ticlaw/backup/` and report the failure.
 
 ---
 
@@ -382,14 +382,14 @@ If tests fail and Level 2 can't resolve, restore from `.aquaclaw/backup/` and re
 
 ### The Problem
 
-`git rerere` is local by default. But AquaClaw has thousands of users applying the same skill combinations. Every user hitting the same conflict and waiting for AI coding CLI to resolve it is wasteful.
+`git rerere` is local by default. But TiClaw has thousands of users applying the same skill combinations. Every user hitting the same conflict and waiting for AI coding CLI to resolve it is wasteful.
 
 ### The Solution
 
-AquaClaw maintains a verified resolution cache in `.aquaclaw/resolutions/` that ships with the project. This is the shared artifact — **not** `.git/rr-cache/`, which stays local.
+TiClaw maintains a verified resolution cache in `.ticlaw/resolutions/` that ships with the project. This is the shared artifact — **not** `.git/rr-cache/`, which stays local.
 
 ```
-.aquaclaw/
+.ticlaw/
   resolutions/
     whatsapp@1.2.0+telegram@1.0.0/
       src/
@@ -438,12 +438,12 @@ After `git merge-file` produces a conflict, the system must create the index sta
 
 ```bash
 # 1. Run the merge (produces conflict markers in the working tree)
-git merge-file current.ts .aquaclaw/base/src/file.ts skills/add-whatsapp/modify/src/file.ts
+git merge-file current.ts .ticlaw/base/src/file.ts skills/add-whatsapp/modify/src/file.ts
 
 # 2. If exit code > 0 (conflict), set up rerere adapter:
 
 # Create blob objects for the three versions
-base_hash=$(git hash-object -w .aquaclaw/base/src/file.ts)
+base_hash=$(git hash-object -w .ticlaw/base/src/file.ts)
 ours_hash=$(git hash-object -w skills/previous-skill/modify/src/file.ts)  # or the pre-merge current
 theirs_hash=$(git hash-object -w skills/add-whatsapp/modify/src/file.ts)
 
@@ -498,7 +498,7 @@ The bar: **a user with any common combination of official skills should never en
 
 ## 8. State Tracking
 
-`.aquaclaw/state.yaml` records everything about the installation:
+`.ticlaw/state.yaml` records everything about the installation:
 
 ```yaml
 skills_system_version: "0.1.0"     # Schema version — tooling checks this before any operation
@@ -544,7 +544,7 @@ custom_modifications:
     applied_at: 2026-02-15T12:00:00Z
     files_modified:
       - src/server.ts
-    patch_file: .aquaclaw/custom/001-logging-middleware.patch
+    patch_file: .ticlaw/custom/001-logging-middleware.patch
 ```
 
 **v0.1 implementation notes:**
@@ -588,7 +588,7 @@ There is no unrecoverable state.
 
 ## 10. Core Updates
 
-Core updates must be as programmatic as possible. The AquaClaw team is responsible for ensuring updates apply cleanly to common skill combinations.
+Core updates must be as programmatic as possible. The TiClaw team is responsible for ensuring updates apply cleanly to common skill combinations.
 
 ### Patches and Migrations
 
@@ -736,7 +736,7 @@ If the user aborts, stop here. Nothing was modified.
 
 #### Step 3: Backup
 
-Copy all files that will be modified to `.aquaclaw/backup/`.
+Copy all files that will be modified to `.ticlaw/backup/`.
 
 #### Step 4: File Operations and Path Remap
 
@@ -747,7 +747,7 @@ Apply renames, deletes, moves. Record path remap in state.
 For each core file that changed:
 
 ```bash
-git merge-file src/server.ts .aquaclaw/base/src/server.ts updates/0.5.0-to-0.6.0/files/src/server.ts
+git merge-file src/server.ts .ticlaw/base/src/server.ts updates/0.5.0-to-0.6.0/files/src/server.ts
 ```
 
 #### Step 6: Conflict Resolution
@@ -760,14 +760,14 @@ git merge-file src/server.ts .aquaclaw/base/src/server.ts updates/0.5.0-to-0.6.0
 #### Step 7: Re-apply Custom Patches
 
 ```bash
-git apply --3way .aquaclaw/custom/001-logging-middleware.patch
+git apply --3way .ticlaw/custom/001-logging-middleware.patch
 ```
 
 Using `--3way` allows git to fall back to three-way merge when line numbers have drifted. If `--3way` fails, escalate to Level 2.
 
 #### Step 8: Update Base
 
-`.aquaclaw/base/` replaced with new clean core. This is the **only time** the base changes.
+`.ticlaw/base/` replaced with new clean core. This is the **only time** the base changes.
 
 #### Step 9: Apply Migration Skills
 
@@ -814,7 +814,7 @@ Core updated: 0.5.0 → 0.8.0
 
 #### Step 13: Clean Up
 
-Delete `.aquaclaw/backup/`.
+Delete `.ticlaw/backup/`.
 
 ### Progressive Core Slimming
 
@@ -835,7 +835,7 @@ Removing a skill is not a reverse-patch operation. **Uninstall is a replay witho
 
 1. Read `state.yaml` to get the full list of applied skills and custom modifications
 2. Remove the target skill from the list
-3. Backup the current codebase to `.aquaclaw/backup/`
+3. Backup the current codebase to `.ticlaw/backup/`
 4. **Replay from clean base** — apply each remaining skill in order, apply custom patches, using the resolution cache
 5. Run all tests
 6. If tests pass, delete backup and update `state.yaml`
@@ -860,7 +860,7 @@ Flatten accumulated layers into a clean starting point.
 ### What Rebase Does
 
 1. Takes the user's current actual files as the new reality
-2. Updates `.aquaclaw/base/` to the current core version's clean files
+2. Updates `.ticlaw/base/` to the current core version's clean files
 3. For each applied skill, regenerates the modified file diffs against the new base
 4. Updates `state.yaml` with `rebased_at` timestamp
 5. Clears old custom patches (now baked in)
@@ -891,10 +891,10 @@ Given `state.yaml`, reproduce the exact installation on a fresh machine with no 
 # Fully programmatic — no AI coding CLI needed
 
 # 1. Install core at specified version
-aquaclaw-init --version 0.5.0
+ticlaw-init --version 0.5.0
 
 # 2. Load shared resolutions into local rerere cache
-load-resolutions .aquaclaw/resolutions/
+load-resolutions .ticlaw/resolutions/
 
 # 3. For each skill in applied_skills (in order):
 for skill in state.applied_skills:
@@ -907,7 +907,7 @@ for skill in state.applied_skills:
   # Merge modified code files (with path remapping)
   for file in skill.files_modified:
     resolved_path = apply_remap(file, state.path_remap)
-    git merge-file ${resolved_path} .aquaclaw/base/${resolved_path} skills/${skill.name}/modify/${file}
+    git merge-file ${resolved_path} .ticlaw/base/${resolved_path} skills/${skill.name}/modify/${file}
     # git rerere auto-resolves from shared cache if needed
 
   # Apply skill-specific custom patch if recorded
@@ -977,7 +977,7 @@ Each passing combination generates a verified resolution entry for the shared ca
 
 ### `.gitattributes`
 
-Ship with AquaClaw to reduce noisy merge conflicts:
+Ship with TiClaw to reduce noisy merge conflicts:
 
 ```
 * text=auto
@@ -1017,7 +1017,7 @@ project/
       ...
     telegram-reactions/             # Layered skill
       ...
-  .aquaclaw/
+  .ticlaw/
     base/                           # Clean core (shared base)
       src/
         server.ts
@@ -1046,9 +1046,9 @@ project/
 2. **Three-level resolution: git → Claude → user.** Programmatic first, AI second, human third.
 3. **Clean merges aren't enough.** Tests run after every operation. Semantic conflicts survive text merges.
 4. **All operations are safe.** Backup before, restore on failure. No half-applied state.
-5. **One shared base.** `.aquaclaw/base/` is the clean core before any skills or customizations. It's the stable common ancestor for all three-way merges. Only updated on core updates.
+5. **One shared base.** `.ticlaw/base/` is the clean core before any skills or customizations. It's the stable common ancestor for all three-way merges. Only updated on core updates.
 6. **Code merges vs. structured operations.** Source code is three-way merged. Dependencies, env vars, and configs are aggregated programmatically. Structured operations are implicit and batched.
-7. **Resolutions are learned and shared.** Maintainers resolve conflicts and ship verified resolutions with hash enforcement. `.aquaclaw/resolutions/` is the shared artifact.
+7. **Resolutions are learned and shared.** Maintainers resolve conflicts and ship verified resolutions with hash enforcement. `.ticlaw/resolutions/` is the shared artifact.
 8. **One skill, one happy path.** No predefined configuration options. Customization is more patching.
 9. **Skills layer and compose.** Core skills provide the foundation. Extension skills add capabilities.
 10. **Intent is first-class and structured.** `SKILL.md`, `.intent.md` (What, Invariants, Must-keep), and `migration.md`.

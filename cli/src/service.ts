@@ -1,5 +1,5 @@
 /**
- * `ac start/stop/status` — Control the AquaClaw system service.
+ * `tc start/stop/status` — Control the TiClaw system service.
  *
  * Wraps the existing setup/service.ts for launchd (macOS) and systemd (Linux).
  */
@@ -12,8 +12,8 @@ import yaml from 'yaml';
 
 const PROJECT_ROOT = path.resolve(import.meta.dirname, '..', '..');
 const HOME_DIR = process.env.HOME || os.homedir();
-const AQUACLAW_HOME = path.join(HOME_DIR, 'aquaclaw');
-const CONFIG_PATH = path.join(AQUACLAW_HOME, 'config.yaml');
+const TICLAW_HOME = path.join(HOME_DIR, 'ticlaw');
+const CONFIG_PATH = path.join(TICLAW_HOME, 'config.yaml');
 
 function getPlatform(): 'macos' | 'linux' | 'unknown' {
   if (process.platform === 'darwin') return 'macos';
@@ -29,11 +29,11 @@ const LAUNCHD_PLIST = path.join(
   HOME_DIR,
   'Library',
   'LaunchAgents',
-  'com.aquaclaw.plist',
+  'com.ticlaw.plist',
 );
 
 function getSystemdUnit(): string {
-  return 'aquaclaw.service';
+  return 'ticlaw.service';
 }
 
 function readConfig(): any {
@@ -49,11 +49,11 @@ function readConfig(): any {
 export async function start(): Promise<void> {
   const platform = getPlatform();
 
-  console.log('\n  🚀 Starting AquaClaw service...\n');
+  console.log('\n  🚀 Starting TiClaw service...\n');
 
   if (platform === 'macos') {
     if (!fs.existsSync(LAUNCHD_PLIST)) {
-      console.log('  Service not installed. Run `ac bootstrap` first.');
+      console.log('  Service not installed. Run `tc bootstrap` first.');
       process.exit(1);
     }
     try {
@@ -62,7 +62,7 @@ export async function start(): Promise<void> {
     } catch {
       try {
         const uid = execSync('id -u', { encoding: 'utf-8' }).trim();
-        execSync(`launchctl kickstart -k gui/${uid}/com.aquaclaw`, {
+        execSync(`launchctl kickstart -k gui/${uid}/com.ticlaw`, {
           stdio: 'inherit',
         });
         console.log('  ✅ Service restarted (launchd)');
@@ -82,9 +82,9 @@ export async function start(): Promise<void> {
       console.log('  ✅ Service started (systemd)');
     } catch {
       console.log('  systemd failed. Starting directly...');
-      const logDir = path.join(AQUACLAW_HOME, 'logs');
+      const logDir = path.join(TICLAW_HOME, 'logs');
       fs.mkdirSync(logDir, { recursive: true });
-      execSync(`nohup node dist/index.js > ${logDir}/aquaclaw.log 2>&1 &`, {
+      execSync(`nohup node dist/index.js > ${logDir}/ticlaw.log 2>&1 &`, {
         cwd: PROJECT_ROOT,
         stdio: 'ignore',
       });
@@ -101,7 +101,7 @@ export async function start(): Promise<void> {
 export async function stop(): Promise<void> {
   const platform = getPlatform();
 
-  console.log('\n  🛑 Stopping AquaClaw service...\n');
+  console.log('\n  🛑 Stopping TiClaw service...\n');
 
   if (platform === 'macos') {
     try {
@@ -136,12 +136,12 @@ export async function status(): Promise<void> {
   const platform = getPlatform();
   const config = readConfig();
 
-  console.log('\n  🦀 AquaClaw Status\n');
+  console.log('\n  🦀 TiClaw Status\n');
 
   // Service status
   if (platform === 'macos') {
     try {
-      const output = execSync('launchctl list | grep aquaclaw', {
+      const output = execSync('launchctl list | grep ticlaw', {
         encoding: 'utf-8',
       });
       const parts = output.trim().split('\t');
@@ -189,7 +189,7 @@ export async function status(): Promise<void> {
 
   // Config summary
   console.log('\n  Config:');
-  console.log(`    File: ${fs.existsSync(CONFIG_PATH) ? CONFIG_PATH : '(not found — run ac bootstrap)'}`);
+  console.log(`    File: ${fs.existsSync(CONFIG_PATH) ? CONFIG_PATH : '(not found — run tc bootstrap)'}`);
   if (config.coding_cli) console.log(`    Coding CLI: ${config.coding_cli}`);
   if (config.assistant_name) console.log(`    Assistant: ${config.assistant_name}`);
   if (config.proxy) console.log(`    Proxy: ${config.proxy}`);

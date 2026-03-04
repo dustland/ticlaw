@@ -3,9 +3,9 @@ import fs from 'fs';
 import path from 'path';
 
 import {
-  AC_CODING_CLI,
+  TC_CODING_CLI,
   ASSISTANT_NAME,
-  AQUACLAW_HOME,
+  TICLAW_HOME,
   IDLE_TIMEOUT,
   POLL_INTERVAL,
   TRIGGER_PATTERN,
@@ -212,7 +212,7 @@ async function processMessages(chatJid: string): Promise<boolean> {
 
 /** Resolve the workspace directory for a group. */
 function getFactoryPath(group: RegisteredProject): string {
-  return path.join(AQUACLAW_HOME, 'factory', group.folder);
+  return path.join(TICLAW_HOME, 'factory', group.folder);
 }
 
 export function getAvailableProjects(): AvailableProject[] {
@@ -468,7 +468,7 @@ async function main(): Promise<void> {
   process.on('SIGINT', () => shutdown('SIGINT'));
   process.on('SIGTERM', () => shutdown('SIGTERM'));
 
-  logger.info(`AquaClaw running (trigger: @${ASSISTANT_NAME})`);
+  logger.info(`TiClaw running (trigger: @${ASSISTANT_NAME})`);
 }
 
 const isDirectRun =
@@ -478,7 +478,7 @@ const isDirectRun =
 
 if (isDirectRun) {
   main().catch((err) => {
-    logger.error({ err }, 'Failed to start AquaClaw');
+    logger.error({ err }, 'Failed to start TiClaw');
     process.exit(1);
   });
 }

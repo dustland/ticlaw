@@ -1,9 +1,9 @@
 #!/bin/bash
-HORIZ_IMAGE="/Users/hugh/.gemini/antigravity/brain/936e6fda-08a4-4523-be28-c8103734390a/horizontal_logo_1772540217561.png"
-cd /Users/hugh/dustland/aquaclaw/assets
+HORIZ_IMAGE="./ticlaw-logo-base.png"
+cd "$(dirname "$0")"
 
-sips -c 252 1024 "$HORIZ_IMAGE" --out aquaclaw-logo-dark.png
-sips -c 319 1024 "$HORIZ_IMAGE" --out aquaclaw-logo.png
+sips -c 252 1024 "$HORIZ_IMAGE" --out ticlaw-logo-dark.png
+sips -c 319 1024 "$HORIZ_IMAGE" --out ticlaw-logo.png
 
 # For social preview, we need 1456x720, so resize width to 1456 and crop height.
 cp "$HORIZ_IMAGE" temp_social.png

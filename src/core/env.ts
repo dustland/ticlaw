@@ -4,9 +4,9 @@ import path from 'path';
 import yaml from 'yaml';
 import { logger } from './logger.js';
 
-const AQUACLAW_CONFIG_PATH = path.join(
+const TICLAW_CONFIG_PATH = path.join(
   process.env.HOME || os.homedir(),
-  'aquaclaw',
+  'ticlaw',
   'config.yaml',
 );
 
@@ -16,19 +16,19 @@ const AQUACLAW_CONFIG_PATH = path.join(
  * don't need to change.
  */
 const YAML_KEY_MAP: Record<string, string[]> = {
-  AC_CODING_CLI: ['coding_cli'],
+  TC_CODING_CLI: ['coding_cli'],
   ASSISTANT_NAME: ['assistant_name'],
   ASSISTANT_HAS_OWN_NUMBER: ['assistant_has_own_number'],
   HTTPS_PROXY: ['proxy'],
   HTTP_PROXY: ['proxy'],
-  AC_DISCORD_TOKEN: ['channels', 'discord', 'token'],
+  TC_DISCORD_TOKEN: ['channels', 'discord', 'token'],
   DISCORD_BOT_TOKEN: ['channels', 'discord', 'token'],
-  AC_TELEGRAM_BOT_TOKEN: ['channels', 'telegram', 'token'],
-  AC_SLACK_TOKEN: ['channels', 'slack', 'token'],
+  TC_TELEGRAM_BOT_TOKEN: ['channels', 'telegram', 'token'],
+  TC_SLACK_TOKEN: ['channels', 'slack', 'token'],
   GEMINI_API_KEY: ['api_keys', 'gemini'],
   ANTHROPIC_API_KEY: ['api_keys', 'anthropic'],
   CLAUDE_CODE_OAUTH_TOKEN: ['api_keys', 'claude_oauth'],
-  AC_PREVIEW_URL_PATTERN: ['preview_url_pattern'],
+  TC_PREVIEW_URL_PATTERN: ['preview_url_pattern'],
   CONTAINER_IMAGE: ['container', 'image'],
   CONTAINER_TIMEOUT: ['container', 'timeout'],
   MAX_CONCURRENT_CONTAINERS: ['container', 'max_concurrent'],
@@ -38,13 +38,13 @@ const YAML_KEY_MAP: Record<string, string[]> = {
 };
 
 /**
- * Read config values from ~/aquaclaw/config.yaml.
+ * Read config values from ~/ticlaw/config.yaml.
  * Returns a flat key-value map using env-style keys.
  */
 export function readConfigYaml(keys: string[]): Record<string, string> {
   let doc: any;
   try {
-    const content = fs.readFileSync(AQUACLAW_CONFIG_PATH, 'utf-8');
+    const content = fs.readFileSync(TICLAW_CONFIG_PATH, 'utf-8');
     doc = yaml.parse(content);
   } catch {
     return {};
@@ -81,7 +81,7 @@ export function readConfigYaml(keys: string[]): Record<string, string> {
  * so they don't leak to child processes.
  */
 export function readEnvFile(keys: string[]): Record<string, string> {
-  // 1. Read from ~/aquaclaw/config.yaml (production)
+  // 1. Read from ~/ticlaw/config.yaml (production)
   const yamlConfig = readConfigYaml(keys);
 
   // 2. Read from .env (dev fallback)
@@ -116,4 +116,4 @@ export function readEnvFile(keys: string[]): Record<string, string> {
 }
 
 /** Path to the YAML config file */
-export { AQUACLAW_CONFIG_PATH };
+export { TICLAW_CONFIG_PATH };
