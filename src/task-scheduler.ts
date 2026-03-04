@@ -1,38 +1,31 @@
-import { ChildProcess } from 'child_process';
 import { CronExpressionParser } from 'cron-parser';
 import fs from 'fs';
+import path from 'path';
 
-import { ASSISTANT_NAME, SCHEDULER_POLL_INTERVAL, TIMEZONE } from './config.js';
 import {
-  ContainerOutput,
-  runContainerAgent,
-  writeTasksSnapshot,
-} from './container-runner.js';
+  ASSISTANT_NAME,
+  SCHEDULER_POLL_INTERVAL,
+  TIMEZONE,
+} from './core/config.js';
 import {
-  getAllTasks,
   getDueTasks,
   getTaskById,
   logTaskRun,
   updateTask,
   updateTaskAfterRun,
-} from './db.js';
-import { GroupQueue } from './group-queue.js';
-import { resolveGroupFolderPath } from './group-folder.js';
-import { logger } from './logger.js';
-import { RegisteredGroup, ScheduledTask } from './types.js';
+} from './core/db.js';
+import { resolveGroupFolderPath } from './executor/group-folder.js';
+import { logger } from './core/logger.js';
+import { RegisteredProject, ScheduledTask } from './core/types.js';
+import { runAgentOrchestrator } from './agent.js';
 
 export interface SchedulerDependencies {
-  registeredGroups: () => Record<string, RegisteredGroup>;
-  getSessions: () => Record<string, string>;
-  queue: GroupQueue;
-  onProcess: (
-    groupJid: string,
-    proc: ChildProcess,
-    containerName: string,
-    groupFolder: string,
-  ) => void;
+  registeredProjects: () => Record<string, RegisteredProject>;
   sendMessage: (jid: string, text: string) => Promise<void>;
 }
+
+// Simple map to lock concurrent scheduled task execution per channel
+const activeTaskLocks = new Map<string, Promise<void>>();
 
 async function runTask(
   task: ScheduledTask,
@@ -67,7 +60,7 @@ async function runTask(
     'Running scheduled task',
   );
 
-  const groups = deps.registeredGroups();
+  const groups = deps.registeredProjects();
   const group = Object.values(groups).find(
     (g) => g.folder === task.group_folder,
   );
@@ -88,90 +81,50 @@ async function runTask(
     return;
   }
 
-  // Update tasks snapshot for container to read (filtered by group)
-  const isMain = group.isMain === true;
-  const tasks = getAllTasks();
-  writeTasksSnapshot(
-    task.group_folder,
-    isMain,
-    tasks.map((t) => ({
-      id: t.id,
-      groupFolder: t.group_folder,
-      prompt: t.prompt,
-      schedule_type: t.schedule_type,
-      schedule_value: t.schedule_value,
-      status: t.status,
-      next_run: t.next_run,
-    })),
-  );
-
   let result: string | null = null;
   let error: string | null = null;
 
-  // For group context mode, use the group's current session
-  const sessions = deps.getSessions();
-  const sessionId =
-    task.context_mode === 'group' ? sessions[task.group_folder] : undefined;
-
-  // After the task produces a result, close the container promptly.
-  // Tasks are single-turn — no need to wait IDLE_TIMEOUT (30 min) for the
-  // query loop to time out. A short delay handles any final MCP calls.
-  const TASK_CLOSE_DELAY_MS = 10000;
-  let closeTimer: ReturnType<typeof setTimeout> | null = null;
-
-  const scheduleClose = () => {
-    if (closeTimer) return; // already scheduled
-    closeTimer = setTimeout(() => {
-      logger.debug({ taskId: task.id }, 'Closing task container after result');
-      deps.queue.closeStdin(task.chat_jid);
-    }, TASK_CLOSE_DELAY_MS);
-  };
-
   try {
-    const output = await runContainerAgent(
-      group,
+    // We treat the scheduled prompt as a system/user pseudo-message to kick off the agent
+    const aiMessages = [
       {
-        prompt: task.prompt,
-        sessionId,
-        groupFolder: task.group_folder,
-        chatJid: task.chat_jid,
-        isMain,
-        isScheduledTask: true,
-        assistantName: ASSISTANT_NAME,
+        role: 'user' as const,
+        content: `[CRON TASK TRIGGERED]\n${task.prompt}`,
       },
-      (proc, containerName) =>
-        deps.onProcess(task.chat_jid, proc, containerName, task.group_folder),
-      async (streamedOutput: ContainerOutput) => {
-        if (streamedOutput.result) {
-          result = streamedOutput.result;
-          // Forward result to user (sendMessage handles formatting)
-          await deps.sendMessage(task.chat_jid, streamedOutput.result);
-          scheduleClose();
+    ];
+
+    await runAgentOrchestrator({
+      chatJid: task.chat_jid,
+      group,
+      workspacePath: groupDir,
+      isMain: !!group.isMain,
+      sessionId: `cron_${task.id.replace(/[^a-zA-Z0-9]/g, '_')}`,
+      messages: aiMessages,
+      // Minimal mocked functions for the orchestrator, since we're just running a background job
+      sendFn: deps.sendMessage,
+      createChannelFn: async () => null,
+      registerProjectFn: () => {},
+      isChannelAliveFn: async () => true,
+      registeredProjects: groups,
+      onReply: async (text) => {
+        await deps.sendMessage(task.chat_jid, text);
+      },
+      onOutput: async (output) => {
+        if (output.result) {
+          result = output.result;
+          await deps.sendMessage(task.chat_jid, output.result);
         }
-        if (streamedOutput.status === 'success') {
-          deps.queue.notifyIdle(task.chat_jid);
-        }
-        if (streamedOutput.status === 'error') {
-          error = streamedOutput.error || 'Unknown error';
+        if (output.status === 'error') {
+          error = output.error || 'Unknown error';
         }
       },
-    );
-
-    if (closeTimer) clearTimeout(closeTimer);
-
-    if (output.status === 'error') {
-      error = output.error || 'Unknown error';
-    } else if (output.result) {
-      // Messages are sent via MCP tool (IPC), result text is just logged
-      result = output.result;
-    }
+    });
 
     logger.info(
       { taskId: task.id, durationMs: Date.now() - startTime },
       'Task completed',
     );
   } catch (err) {
-    if (closeTimer) clearTimeout(closeTimer);
     error = err instanceof Error ? err.message : String(err);
     logger.error({ taskId: task.id, error }, 'Task failed');
   }
@@ -202,7 +155,7 @@ async function runTask(
   const resultSummary = error
     ? `Error: ${error}`
     : result
-      ? result.slice(0, 200)
+      ? (result as string).slice(0, 200)
       : 'Completed';
   updateTaskAfterRun(task.id, nextRun, resultSummary);
 }
@@ -231,9 +184,18 @@ export function startSchedulerLoop(deps: SchedulerDependencies): void {
           continue;
         }
 
-        deps.queue.enqueueTask(currentTask.chat_jid, currentTask.id, () =>
-          runTask(currentTask, deps),
-        );
+        // Prevent overlapping scheduled runs per channel to avoid confusing the agent
+        if (!activeTaskLocks.has(currentTask.chat_jid)) {
+          const promise = runTask(currentTask, deps).finally(() => {
+            activeTaskLocks.delete(currentTask.chat_jid);
+          });
+          activeTaskLocks.set(currentTask.chat_jid, promise);
+        } else {
+          logger.debug(
+            { taskId: task.id },
+            'Skipping overlapping scheduled task execution',
+          );
+        }
       }
     } catch (err) {
       logger.error({ err }, 'Error in scheduler loop');

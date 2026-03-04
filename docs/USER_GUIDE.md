@@ -55,7 +55,7 @@ AquaClaw is commanded entirely through **Discord**. All task-specific commands s
 
 ### 🛠 `/skill [skill-name]`
 **Usage:** Inject specialized capabilities into the active workspace.
-- **What it does:** Applies an OpenClaw skill (found in `.claude/skills/`) to the current physical factory.
+- **What it does:** Applies an OpenClaw skill (found in `skills/`) to the current physical factory.
 - **Example:** `/skill add-slack`
 
 ### 🚀 `/push`
@@ -64,6 +64,8 @@ AquaClaw is commanded entirely through **Discord**. All task-specific commands s
   1. Summarizes all code changes using Gemini.
   2. Collects the Discord thread history for context.
   3. Uses the GitHub CLI (`gh`) to create a Pull Request with an AI-generated description.
+- **Pro Tip:** We strongly recommend enabling **Live Preview Environments** (e.g., via **Render.com** or **Vercel**) on your target repository.
+  - If you configure `AC_PREVIEW_URL_PATTERN` in your `.env` (e.g., `https://myapp-pr-${PR_NUMBER}.onrender.com`), AquaClaw will automatically relay the live deployment URL to your Discord thread upon creating the PR.
 
 ---
 

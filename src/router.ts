@@ -1,21 +1,4 @@
-import { Channel, NewMessage } from './types.js';
-
-export function escapeXml(s: string): string {
-  if (!s) return '';
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
-
-export function formatMessages(messages: NewMessage[]): string {
-  const lines = messages.map(
-    (m) =>
-      `<message sender="${escapeXml(m.sender_name)}" time="${m.timestamp}">${escapeXml(m.content)}</message>`,
-  );
-  return `<messages>\n${lines.join('\n')}\n</messages>`;
-}
+import { Channel, NewMessage } from './core/types.js';
 
 export function stripInternalTags(text: string): string {
   return text.replace(/<internal>[\s\S]*?<\/internal>/g, '').trim();
@@ -31,10 +14,11 @@ export function routeOutbound(
   channels: Channel[],
   jid: string,
   text: string,
+  options?: { embeds?: any[] },
 ): Promise<void> {
   const channel = channels.find((c) => c.ownsJid(jid) && c.isConnected());
   if (!channel) throw new Error(`No channel for JID: ${jid}`);
-  return channel.sendMessage(jid, text);
+  return channel.sendMessage(jid, text, options);
 }
 
 export function routeOutboundFile(
@@ -46,6 +30,17 @@ export function routeOutboundFile(
   const channel = channels.find((c) => c.ownsJid(jid) && c.isConnected());
   if (!channel) throw new Error(`No channel for JID: ${jid}`);
   return channel.sendFile(jid, filePath, caption);
+}
+
+export function routeSetTyping(
+  channels: Channel[],
+  jid: string,
+  isTyping: boolean,
+): Promise<void> | void {
+  const channel = channels.find((c) => c.ownsJid(jid) && c.isConnected());
+  if (channel && channel.setTyping) {
+    return channel.setTyping(jid, isTyping);
+  }
 }
 
 export function findChannel(

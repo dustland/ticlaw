@@ -8,14 +8,17 @@
     ],
     "outDir": "./dist",
     "rootDir": "./src",
-    "strict": false,
+    "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
-    "resolveJsonModule": true,
     "declaration": true,
-    "declarationMap": true,
-    "sourceMap": true
+    "sourceMap": true,
+    "paths": {
+      "aquaclaw/*": [
+        "../src/*"
+      ]
+    }
   },
   "include": [
     "src/**/*"

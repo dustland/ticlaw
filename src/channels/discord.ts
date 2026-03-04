@@ -1,4 +1,5 @@
 import {
+  ChannelType,
   Client,
   Events,
   GatewayIntentBits,
@@ -9,27 +10,24 @@ import {
 } from 'discord.js';
 import { ProxyAgent } from 'undici';
 import { HttpsProxyAgent } from 'https-proxy-agent';
+import https from 'node:https';
 
-import { ASSISTANT_NAME, TRIGGER_PATTERN } from '../config.js';
-import { readEnvFile } from '../env.js';
-import { logger } from '../logger.js';
+import { ASSISTANT_NAME, TRIGGER_PATTERN } from '../core/config.js';
+import { readEnvFile } from '../core/env.js';
+import { logger } from '../core/logger.js';
 import { registerChannel, ChannelOpts } from './registry.js';
 import {
   Channel,
   OnChatMetadata,
   OnInboundMessage,
-  RegisteredGroup,
-} from '../types.js';
-import { AcWorkspace } from '../executor/workspace.js';
+  RegisteredProject,
+} from '../core/types.js';
 
 export interface DiscordChannelOpts extends ChannelOpts {
   onMessage: OnInboundMessage;
   onChatMetadata: OnChatMetadata;
-  registeredGroups: () => Record<string, RegisteredGroup>;
-  onGroupRegistered?: (jid: string, group: RegisteredGroup) => void;
-  onVerify?: (chatJid: string, url: string) => Promise<void>;
-  onPush?: (chatJid: string) => Promise<void>;
-  onSkill?: (chatJid: string, skillName: string) => Promise<void>;
+  registeredProjects: () => Record<string, RegisteredProject>;
+  onGroupRegistered?: (jid: string, group: RegisteredProject) => void;
 }
 
 export class DiscordChannel implements Channel {
@@ -38,6 +36,7 @@ export class DiscordChannel implements Channel {
   private client: Client | null = null;
   private opts: DiscordChannelOpts;
   private botToken: string;
+  private originalHttpsAgent: https.Agent | null = null;
 
   constructor(botToken: string, opts: DiscordChannelOpts) {
     this.botToken = botToken;
@@ -74,15 +73,20 @@ export class DiscordChannel implements Channel {
         'Discord: Configuring proxy for REST and Gateway',
       );
 
-      // Agent for REST (undici)
+      // Agent for REST API (undici-based fetch)
       clientOptions.rest = {
         agent: new ProxyAgent(proxyUrl),
       };
 
-      // Agent for Gateway (WebSocket)
-      clientOptions.ws = {
-        agent: new HttpsProxyAgent(proxyUrl),
-      };
+      // Gateway WebSocket proxy: discord.js v14's @discordjs/ws uses the `ws`
+      // package on Node.js, which calls https.request() without an explicit
+      // agent. Node falls back to https.globalAgent for the WebSocket upgrade
+      // request. By replacing it with an HttpsProxyAgent, all WSS connections
+      // (including the Discord Gateway) are routed through the proxy.
+      const agent = new HttpsProxyAgent(proxyUrl);
+      this.originalHttpsAgent = https.globalAgent;
+      https.globalAgent = agent as unknown as https.Agent;
+      logger.info('Discord: Set https.globalAgent for Gateway proxy');
     }
 
     this.client = new Client(clientOptions);
@@ -102,45 +106,18 @@ export class DiscordChannel implements Channel {
       const sender = message.author.id;
       const msgId = message.id;
 
-      // Special Command: /claw
+      // Legacy: /claw is deprecated — the agent handles all messages now.
+      // If someone types /claw, treat it as a normal message to the agent.
       if (content.startsWith('/claw')) {
-        await this.handleClawCommand(message);
-        return;
-      }
-
-      // Special Command: /verify
-      if (content.startsWith('/verify')) {
-        const parts = content.split(' ');
-        const url = parts[1];
-        if (url && this.opts.onVerify) {
+        content = content.replace(/^\/claw\s*/, '').trim();
+        if (!content) {
           await message.reply(
-            `🦀 Initializing Playwright verification for ${url}...`,
+            'Just @mention me with your task! e.g. `@AquaClaw fix #198`',
           );
-          await this.opts.onVerify(chatJid, url);
-        } else {
-          await message.reply('Usage: `/verify https://your-app-url.com`');
+          return;
         }
-        return;
-      }
-
-      // Special Command: /push
-      if (content.startsWith('/push')) {
-        if (this.opts.onPush) {
-          await this.opts.onPush(chatJid);
-        }
-        return;
-      }
-
-      // Special Command: /skill
-      if (content.startsWith('/skill')) {
-        const parts = content.split(' ');
-        const skillName = parts[1];
-        if (skillName && this.opts.onSkill) {
-          await this.opts.onSkill(chatJid, skillName);
-        } else {
-          await message.reply('Usage: `/skill add-slack`');
-        }
-        return;
+        // Prepend trigger so it gets processed
+        content = `@${ASSISTANT_NAME} ${content}`;
       }
 
       // Determine chat name
@@ -223,14 +200,48 @@ export class DiscordChannel implements Channel {
         isGroup,
       );
 
-      // Only deliver full message for registered groups
-      const group = this.opts.registeredGroups()[chatJid];
+      // Check if this channel is a registered group
+      let group = this.opts.registeredProjects()[chatJid];
+
+      // Auto-register channel when bot is @mentioned in an unregistered channel
       if (!group) {
-        logger.debug(
+        // Only auto-register if the bot was mentioned (not random chatter)
+        if (!TRIGGER_PATTERN.test(content)) {
+          logger.debug(
+            { chatJid, chatName },
+            'Message from unregistered channel (no bot mention)',
+          );
+          return;
+        }
+
+        // Auto-register this channel
+        logger.info(
           { chatJid, chatName },
-          'Message from unregistered Discord channel',
+          'Auto-registering channel on bot mention',
         );
-        return;
+
+        const channelName =
+          message.channel instanceof TextChannel
+            ? (message.channel as TextChannel).name
+            : message.channel.isThread()
+              ? message.channel.name
+              : `dm-${sender}`;
+
+        const newGroup: RegisteredProject = {
+          name: channelName,
+          folder: channelName,
+          trigger: `@${ASSISTANT_NAME}`,
+          added_at: new Date().toISOString(),
+          requiresTrigger: false,
+          isMain: false,
+        };
+
+        if (this.opts.onGroupRegistered) {
+          this.opts.onGroupRegistered(chatJid, newGroup);
+        }
+
+        group = newGroup;
+        logger.info({ chatJid, channelName }, 'Channel auto-registered');
       }
 
       // Deliver message — startMessageLoop() will pick it up
@@ -280,101 +291,11 @@ export class DiscordChannel implements Channel {
     });
   }
 
-  private async handleClawCommand(message: Message): Promise<void> {
-    const parts = message.content.split(' ');
-    const url = parts[1];
-
-    if (!url) {
-      await message.reply(
-        'Please provide a GitHub Issue URL. Usage: `/claw https://github.com/user/repo/issues/1`',
-      );
-      return;
-    }
-
-    try {
-      // 1. Create a Discord Thread
-      const threadName = `🦀-claw-${message.author.username}-${Date.now().toString().slice(-4)}`;
-      let thread: AnyThreadChannel;
-
-      if (message.channel instanceof TextChannel) {
-        thread = await message.channel.threads.create({
-          name: threadName,
-          autoArchiveDuration: 60,
-          reason: `AquaClaw task for ${url}`,
-        });
-      } else {
-        await message.reply('Claw command must be run in a text channel.');
-        return;
-      }
-
-      const threadJid = `dc:${thread.id}`;
-      await thread.send(
-        `雪蟹已就位 (AquaClaw ready). Target: ${url}\nInitializing physical workspace...`,
-      );
-
-      // 2. Initialize Workspace
-      const workspace = new AcWorkspace({
-        id: thread.id,
-        name: threadName,
-        githubUrl: url,
-        onFileAdded: async (filePath) => {
-          await this.sendFile(threadJid, filePath, '📸 New Snapshot');
-        },
-        onSummary: async (summary) => {
-          await this.sendMessage(threadJid, `📝 **Delta Feed:** ${summary}`);
-        },
-      });
-      await workspace.init();
-
-      // 3. Auto-Bootstrap
-      await thread.send(
-        '🏗 Preparing environment (cloning, seeding .env, installing deps)...',
-      );
-      const bootstrapResult = await workspace.autoBootstrap();
-
-      if (!bootstrapResult.success) {
-        await thread.send(
-          `⚠️ **Environment Preparation Warning:**\n\`\`\`\n${bootstrapResult.log.slice(-1500)}\n\`\`\`\nI will still attempt to proceed, but manual intervention may be needed.`,
-        );
-      } else {
-        await thread.send('✅ Environment ready.');
-      }
-
-      // 4. Register Group Automatically
-      const newGroup: RegisteredGroup = {
-        name: threadName,
-        folder: thread.id,
-        trigger: `@${ASSISTANT_NAME}`,
-        added_at: new Date().toISOString(),
-        requiresTrigger: false,
-        isMain: false,
-      };
-
-      if (this.opts.onGroupRegistered) {
-        this.opts.onGroupRegistered(threadJid, newGroup);
-      }
-
-      await thread.send(
-        `Workspace initialized at \`~/aquaclaw/factory/${thread.id}\`. I am now listening to this thread.`,
-      );
-
-      // Send the initial prompt to the agent
-      this.opts.onMessage(threadJid, {
-        id: `init-${Date.now()}`,
-        chat_jid: threadJid,
-        sender: message.author.id,
-        sender_name: message.author.username,
-        content: `@${ASSISTANT_NAME} Please start working on this issue: ${url}. The workspace is already initialized.`,
-        timestamp: new Date().toISOString(),
-        is_from_me: false,
-      });
-    } catch (err: any) {
-      logger.error({ err: err.message }, 'Failed to handle /claw command');
-      await message.reply(`Failed to start Claw task: ${err.message}`);
-    }
-  }
-
-  async sendMessage(jid: string, text: string): Promise<void> {
+  async sendMessage(
+    jid: string,
+    text: string,
+    options?: { embeds?: any[] },
+  ): Promise<void> {
     if (!this.client) {
       logger.warn('Discord client not initialized');
       return;
@@ -389,16 +310,37 @@ export class DiscordChannel implements Channel {
         return;
       }
 
-      // Check if it's a ThreadChannel or TextChannel
       const sendable = channel as TextChannel | ThreadChannel;
+
+      logger.info(
+        {
+          jid,
+          textLength: text.length,
+          embeds: options?.embeds?.length,
+          rawContent: text,
+        },
+        'Discord sending message payload',
+      );
 
       // Discord has a 2000 character limit per message — split if needed
       const MAX_LENGTH = 2000;
       if (text.length <= MAX_LENGTH) {
-        await sendable.send(text);
+        await sendable.send({
+          content: text === '' ? undefined : text,
+          embeds: options?.embeds,
+        });
       } else {
+        // Only attach embeds to the last chunk
         for (let i = 0; i < text.length; i += MAX_LENGTH) {
-          await sendable.send(text.slice(i, i + MAX_LENGTH));
+          const chunk = text.slice(i, i + MAX_LENGTH);
+          if (i + MAX_LENGTH >= text.length) {
+            await sendable.send({
+              content: chunk === '' ? undefined : chunk,
+              embeds: options?.embeds,
+            });
+          } else {
+            await sendable.send({ content: chunk });
+          }
         }
       }
       logger.info({ jid, length: text.length }, 'Discord message sent');
@@ -407,7 +349,42 @@ export class DiscordChannel implements Channel {
     }
   }
 
-  async sendFile(jid: string, filePath: string, caption?: string): Promise<void> {
+  private typingIntervals: Map<string, NodeJS.Timeout> = new Map();
+
+  async setTyping(jid: string, isTyping: boolean): Promise<void> {
+    if (!this.client) return;
+
+    const channelId = jid.replace(/^dc:/, '');
+    const currentInterval = this.typingIntervals.get(channelId);
+
+    if (isTyping) {
+      if (currentInterval) return; // already typing
+      try {
+        const channel = await this.client.channels.fetch(channelId);
+        if (channel && 'sendTyping' in channel) {
+          const sendable = channel as TextChannel | ThreadChannel;
+          await sendable.sendTyping();
+          const interval = setInterval(() => {
+            sendable.sendTyping().catch(() => {});
+          }, 9000); // refresh every 9s before Discord's 10s timeout
+          this.typingIntervals.set(channelId, interval);
+        }
+      } catch (err) {
+        logger.warn({ jid }, 'Failed to set typing status');
+      }
+    } else {
+      if (currentInterval) {
+        clearInterval(currentInterval);
+        this.typingIntervals.delete(channelId);
+      }
+    }
+  }
+
+  async sendFile(
+    jid: string,
+    filePath: string,
+    caption?: string,
+  ): Promise<void> {
     if (!this.client) {
       logger.warn('Discord client not initialized');
       return;
@@ -445,20 +422,61 @@ export class DiscordChannel implements Channel {
     if (this.client) {
       this.client.destroy();
       this.client = null;
+      // Restore original https.globalAgent if we changed it for proxy
+      if (this.originalHttpsAgent) {
+        https.globalAgent = this.originalHttpsAgent;
+        this.originalHttpsAgent = null;
+      }
       logger.info('Discord bot stopped');
     }
   }
 
-  async setTyping(jid: string, isTyping: boolean): Promise<void> {
-    if (!this.client || !isTyping) return;
+  async createChannel(
+    fromJid: string,
+    channelName: string,
+  ): Promise<string | null> {
+    if (!this.client) return null;
+    try {
+      const sourceChannelId = fromJid.replace(/^dc:/, '');
+      const sourceChannel = await this.client.channels.fetch(sourceChannelId);
+      if (
+        !sourceChannel ||
+        !('guild' in sourceChannel) ||
+        !sourceChannel.guild
+      ) {
+        logger.warn(
+          { fromJid },
+          'Cannot create channel: source is not a guild channel',
+        );
+        return null;
+      }
+
+      const guild = sourceChannel.guild;
+      const newChannel = await guild.channels.create({
+        name: channelName,
+        type: ChannelType.GuildText,
+      });
+
+      const newJid = `dc:${newChannel.id}`;
+      logger.info({ fromJid, newJid, channelName }, 'Discord channel created');
+      return newJid;
+    } catch (err: any) {
+      logger.error(
+        { err: err.message, fromJid, channelName },
+        'Failed to create Discord channel',
+      );
+      return null;
+    }
+  }
+
+  async channelExists(jid: string): Promise<boolean> {
+    if (!this.client) return false;
     try {
       const channelId = jid.replace(/^dc:/, '');
       const channel = await this.client.channels.fetch(channelId);
-      if (channel && 'sendTyping' in channel) {
-        await (channel as any).sendTyping();
-      }
-    } catch (err) {
-      logger.debug({ jid, err }, 'Failed to send Discord typing indicator');
+      return !!channel;
+    } catch {
+      return false;
     }
   }
 }

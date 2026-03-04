@@ -1,170 +1,90 @@
 # AquaClaw Specification
 
-A personal Claude assistant with multi-channel support, persistent memory per conversation, scheduled tasks, and container-isolated agent execution.
+A distributed AI R&D engine with multi-channel support, physical workspace isolation, automated observability, and multi-CLI agent execution. Supports Gemini CLI (default), Claude Code, and Codex.
 
 ---
 
-## Table of Contents
+## Technology Stack
 
-1. [Architecture](#architecture)
-2. [Architecture: Channel System](#architecture-channel-system)
-3. [Folder Structure](#folder-structure)
-4. [Configuration](#configuration)
-5. [Memory System](#memory-system)
-6. [Session Management](#session-management)
-7. [Message Flow](#message-flow)
-8. [Commands](#commands)
-9. [Scheduled Tasks](#scheduled-tasks)
-10. [MCP Servers](#mcp-servers)
-11. [Deployment](#deployment)
-12. [Security Considerations](#security-considerations)
-
----
-
-## Architecture
-
-```
-┌──────────────────────────────────────────────────────────────────────┐
-│                        HOST (macOS / Linux)                           │
-│                     (Main Node.js Process)                            │
-├──────────────────────────────────────────────────────────────────────┤
-│                                                                       │
-│  ┌──────────────────┐                  ┌────────────────────┐        │
-│  │ Channels         │─────────────────▶│   SQLite Database  │        │
-│  │ (self-register   │◀────────────────│   (messages.db)    │        │
-│  │  at startup)     │  store/send      └─────────┬──────────┘        │
-│  └──────────────────┘                            │                   │
-│                                                   │                   │
-│         ┌─────────────────────────────────────────┘                   │
-│         │                                                             │
-│         ▼                                                             │
-│  ┌──────────────────┐    ┌──────────────────┐    ┌───────────────┐   │
-│  │  Message Loop    │    │  Scheduler Loop  │    │  IPC Watcher  │   │
-│  │  (polls SQLite)  │    │  (checks tasks)  │    │  (file-based) │   │
-│  └────────┬─────────┘    └────────┬─────────┘    └───────────────┘   │
-│           │                       │                                   │
-│           └───────────┬───────────┘                                   │
-│                       │ spawns container                              │
-│                       ▼                                               │
-├──────────────────────────────────────────────────────────────────────┤
-│                     CONTAINER (Linux VM)                               │
-├──────────────────────────────────────────────────────────────────────┤
-│  ┌──────────────────────────────────────────────────────────────┐    │
-│  │                    AGENT RUNNER                               │    │
-│  │                                                                │    │
-│  │  Working directory: /workspace/group (mounted from host)       │    │
-│  │  Volume mounts:                                                │    │
-│  │    • groups/{name}/ → /workspace/group                         │    │
-│  │    • groups/global/ → /workspace/global/ (non-main only)       │    │
-│  │    • data/sessions/{group}/.claude/ → /home/node/.claude/      │    │
-│  │    • Additional dirs → /workspace/extra/*                      │    │
-│  │                                                                │    │
-│  │  Tools (all groups):                                           │    │
-│  │    • Bash (safe - sandboxed in container!)                     │    │
-│  │    • Read, Write, Edit, Glob, Grep (file operations)           │    │
-│  │    • WebSearch, WebFetch (internet access)                     │    │
-│  │    • agent-browser (browser automation)                        │    │
-│  │    • mcp__aquaclaw__* (scheduler tools via IPC)                │    │
-│  │                                                                │    │
-│  └──────────────────────────────────────────────────────────────┘    │
-│                                                                       │
-└───────────────────────────────────────────────────────────────────────┘
-```
-
-### Technology Stack
-
-| Component | Technology | Purpose |
-|-----------|------------|---------|
-| Channel System | Channel registry (`src/channels/registry.ts`) | Channels self-register at startup |
-| Message Storage | SQLite (better-sqlite3) | Store messages for polling |
-| Container Runtime | Containers (Linux VMs) | Isolated environments for agent execution |
-| Agent | @anthropic-ai/claude-agent-sdk (0.2.29) | Run Claude with tools and MCP servers |
-| Browser Automation | agent-browser + Chromium | Web interaction and screenshots |
+| Layer | Technology | Purpose |
+|-------|-----------|---------|
 | Runtime | Node.js 20+ | Host process for routing and scheduling |
+| Agent | Multi-CLI (Gemini CLI default, Claude Code, Codex) | Run AI agent with tools and MCP servers |
+| Workspace | Physical directories (`~/aquaclaw/factory/`) | Isolated per-task work environments |
+| Persistence | Tmux sessions | Agent survives host process restarts |
+| Observability | Gemini 2.0 Flash + Playwright | Delta feed summaries and UI verification |
+| Channel | Channel registry (`src/channels/registry.ts`) | Channels self-register at startup |
+| Storage | SQLite (better-sqlite3) | Messages, groups, sessions, tasks |
+| PR Automation | GitHub CLI (`gh`) | Create PRs from workspace changes |
 
 ---
 
-## Architecture: Channel System
+## Architecture Overview
 
-The core ships with no channels built in — each channel (WhatsApp, Telegram, Slack, Discord, Gmail) is installed as a [Claude Code skill](https://code.claude.com/docs/en/skills) that adds the channel code to your fork. Channels self-register at startup; installed channels with missing credentials emit a WARN log and are skipped.
+AquaClaw operates in two execution modes selected at runtime:
+
+1. **Physical Mode** (default) — Agent runs directly on the host in a Tmux session within a physical workspace (`~/aquaclaw/factory/{id}/`). Provides native toolchain access.
+2. **Container Mode** (fallback) — Agent runs inside a Linux container. Used when container runtime is available and desired for stronger isolation.
 
 ### System Diagram
 
-```mermaid
-graph LR
-    subgraph Channels["Channels"]
-        WA[WhatsApp]
-        TG[Telegram]
-        SL[Slack]
-        DC[Discord]
-        New["Other Channel (Signal, Gmail...)"]
-    end
-
-    subgraph Orchestrator["Orchestrator — index.ts"]
-        ML[Message Loop]
-        GQ[Group Queue]
-        RT[Router]
-        TS[Task Scheduler]
-        DB[(SQLite)]
-    end
-
-    subgraph Execution["Container Execution"]
-        CR[Container Runner]
-        LC["Linux Container"]
-        IPC[IPC Watcher]
-    end
-
-    %% Flow
-    WA & TG & SL & DC & New -->|onMessage| ML
-    ML --> GQ
-    GQ -->|concurrency| CR
-    CR --> LC
-    LC -->|filesystem IPC| IPC
-    IPC -->|tasks & messages| RT
-    RT -->|Channel.sendMessage| Channels
-    TS -->|due tasks| CR
-
-    %% DB Connections
-    DB <--> ML
-    DB <--> TS
-
-    %% Styling for the dynamic channel
-    style New stroke-dasharray: 5 5,stroke-width:2px
+```
+[Discord / Slack / WhatsApp / Telegram]
+         │
+         ▼
+   ┌──────────────────────────┐
+   │  AquaClaw Host Process    │
+   │  (src/index.ts)           │
+   │                           │
+   │  ┌─────────────────────┐  │
+   │  │  Channel Registry   │  │
+   │  │  (self-registration)│  │
+   │  └────────┬────────────┘  │
+   │           │               │
+   │  ┌────────▼────────────┐  │
+   │  │  Message Router     │  │
+   │  │  (trigger matching) │  │
+   │  └────────┬────────────┘  │
+   │           │               │
+   │  ┌────────▼────────────┐  │
+   │  │  Group Queue        │  │
+   │  │  (concurrency ctrl) │  │
+   │  └────────┬────────────┘  │
+   │           │               │
+   │  ┌────────▼────────────┐  │
+   │  │  runAgent()         │  │
+   │  │  ┌───────────────┐  │  │
+   │  │  │ Physical Mode │  │  │
+   │  │  │ AcWorkspace   │◄─┼──┼── /verify, /push, /skill
+   │  │  │ + TmuxBridge  │  │  │
+   │  │  └───────────────┘  │  │
+   │  │  ┌───────────────┐  │  │
+   │  │  │ Container Mode│  │  │
+   │  │  │ (fallback)    │  │  │
+   │  │  └───────────────┘  │  │
+   │  └─────────────────────┘  │
+   │                           │
+   │  ┌─────────────────────┐  │
+   │  │  Task Scheduler     │  │
+   │  │  (cron / interval)  │  │
+   │  └─────────────────────┘  │
+   └───────────────────────────┘
 ```
 
-### Channel Registry
+---
 
-The channel system is built on a factory registry in `src/channels/registry.ts`:
+## Channel System
 
-```typescript
-export type ChannelFactory = (opts: ChannelOpts) => Channel | null;
-
-const registry = new Map<string, ChannelFactory>();
-
-export function registerChannel(name: string, factory: ChannelFactory): void {
-  registry.set(name, factory);
-}
-
-export function getChannelFactory(name: string): ChannelFactory | undefined {
-  return registry.get(name);
-}
-
-export function getRegisteredChannelNames(): string[] {
-  return [...registry.keys()];
-}
-```
-
-Each factory receives `ChannelOpts` (callbacks for `onMessage`, `onChatMetadata`, and `registeredGroups`) and returns either a `Channel` instance or `null` if that channel's credentials are not configured.
+The core ships with no channels built in — each channel (Discord, Slack, Telegram, WhatsApp, Gmail) is added via a skill (e.g., `/add-discord`). Each skill contributes the channel implementation and registers it at startup via `registerChannel()`. Installed channels with missing credentials emit a WARN log and are skipped.
 
 ### Channel Interface
-
-Every channel implements this interface (defined in `src/types.ts`):
 
 ```typescript
 interface Channel {
   name: string;
   connect(): Promise<void>;
   sendMessage(jid: string, text: string): Promise<void>;
+  sendFile(jid: string, filePath: string, caption?: string): Promise<void>;
   isConnected(): boolean;
   ownsJid(jid: string): boolean;
   disconnect(): Promise<void>;
@@ -173,613 +93,403 @@ interface Channel {
 }
 ```
 
-### Self-Registration Pattern
+### Channel Callbacks
 
-Channels self-register using a barrel-import pattern:
+Channels are instantiated with these callbacks:
 
-1. Each channel skill adds a file to `src/channels/` (e.g. `whatsapp.ts`, `telegram.ts`) that calls `registerChannel()` at module load time:
+| Callback | Purpose |
+|----------|---------|
+| `onMessage` | Stores inbound message to SQLite |
+| `onChatMetadata` | Records chat/group discovery |
+| `onGroupRegistered` | Registers a new group |
+| `onVerify` | Triggers Playwright verification |
+| `onPush` | Triggers GitHub PR creation |
+| `onSkill` | Applies a skill to the workspace |
 
-   ```typescript
-   // src/channels/whatsapp.ts
-   import { registerChannel, ChannelOpts } from './registry.js';
+### Adding a Channel
 
-   export class WhatsAppChannel implements Channel { /* ... */ }
+Channels are added via skills. Each channel skill:
 
-   registerChannel('whatsapp', (opts: ChannelOpts) => {
-     // Return null if credentials are missing
-     if (!existsSync(authPath)) return null;
-     return new WhatsAppChannel(opts);
-   });
-   ```
-
-2. The barrel file `src/channels/index.ts` imports all channel modules, triggering registration:
-
-   ```typescript
-   import './whatsapp.js';
-   import './telegram.js';
-   // ... each skill adds its import here
-   ```
-
-3. At startup, the orchestrator (`src/index.ts`) loops through registered channels and connects whichever ones return a valid instance:
-
-   ```typescript
-   for (const name of getRegisteredChannelNames()) {
-     const factory = getChannelFactory(name);
-     const channel = factory?.(channelOpts);
-     if (channel) {
-       await channel.connect();
-       channels.push(channel);
-     }
-   }
-   ```
-
-### Key Files
-
-| File | Purpose |
-|------|---------|
-| `src/channels/registry.ts` | Channel factory registry |
-| `src/channels/index.ts` | Barrel imports that trigger channel self-registration |
-| `src/types.ts` | `Channel` interface, `ChannelOpts`, message types |
-| `src/index.ts` | Orchestrator — instantiates channels, runs message loop |
-| `src/router.ts` | Finds the owning channel for a JID, formats messages |
-
-### Adding a New Channel
-
-To add a new channel, contribute a skill to `.claude/skills/add-<name>/` that:
-
-1. Adds a `src/channels/<name>.ts` file implementing the `Channel` interface
-2. Calls `registerChannel(name, factory)` at module load
-3. Returns `null` from the factory if credentials are missing
-4. Adds an import line to `src/channels/index.ts`
-
-See existing skills (`/add-whatsapp`, `/add-telegram`, `/add-slack`, `/add-discord`, `/add-gmail`) for the pattern.
+1. Provides a channel implementation of the `Channel` interface
+2. Calls `registerChannel('my-channel', factory)` at module load
+3. Handles authentication flow and credential setup
+4. Auto-registers at startup when credentials are present in `.env`
 
 ---
 
 ## Folder Structure
 
 ```
-aquaclaw/
-├── CLAUDE.md                      # Project context for Claude Code
+aquaclaw/                              # Project root (source code)
+├── CLAUDE.md / GEMINI.md              # Project context for AI coding CLIs
 ├── docs/
-│   ├── SPEC.md                    # This specification document
-│   ├── REQUIREMENTS.md            # Architecture decisions
-│   └── SECURITY.md                # Security model
-├── README.md                      # User documentation
-├── package.json                   # Node.js dependencies
-├── tsconfig.json                  # TypeScript configuration
-├── .mcp.json                      # MCP server configuration (reference)
-├── .gitignore
+│   ├── SPEC.md                        # This specification document
+│   ├── ARCHITECTURE.md                # High-level architecture guide
+│   ├── REQUIREMENTS.md                # Philosophy and design goals
+│   ├── SECURITY.md                    # Security model
+│   ├── SKILLS.md                      # Skills architecture (merge system)
+│   └── USER_GUIDE.md                  # End-user guide
 │
 ├── src/
-│   ├── index.ts                   # Orchestrator: state, message loop, agent invocation
+│   ├── index.ts                       # Main entry — routing, agent dispatch
+│   ├── config.ts                      # Configuration (env vars, paths)
+│   ├── db.ts                          # SQLite schema and queries
+│   ├── types.ts                       # TypeScript interfaces
+│   ├── env.ts                         # .env file reader
+│   ├── logger.ts                      # Pino logger
+│   ├── group-folder.ts               # Group folder management
+│   ├── group-queue.ts                 # Concurrency-controlled message queue
+│   ├── router.ts                      # Outbound message routing
+│   ├── task-scheduler.ts              # Cron/interval/one-time task scheduler
+│   ├── container-runner.ts            # Container mode agent execution
+│   ├── container-runtime.ts           # Container lifecycle management
+│   ├── mount-security.ts             # Mount validation for container mode
+│   ├── ipc.ts                         # IPC for container ↔ host communication
 │   ├── channels/
-│   │   ├── registry.ts            # Channel factory registry
-│   │   └── index.ts               # Barrel imports for channel self-registration
-│   ├── ipc.ts                     # IPC watcher and task processing
-│   ├── router.ts                  # Message formatting and outbound routing
-│   ├── config.ts                  # Configuration constants
-│   ├── types.ts                   # TypeScript interfaces (includes Channel)
-│   ├── logger.ts                  # Pino logger setup
-│   ├── db.ts                      # SQLite database initialization and queries
-│   ├── group-queue.ts             # Per-group queue with global concurrency limit
-│   ├── mount-security.ts          # Mount allowlist validation for containers
-│   ├── whatsapp-auth.ts           # Standalone WhatsApp authentication
-│   ├── task-scheduler.ts          # Runs scheduled tasks when due
-│   └── container-runner.ts        # Spawns agents in containers
+│   │   ├── index.ts                   # Auto-imports installed channels
+│   │   ├── registry.ts               # Channel factory registry
+│   │   └── discord.ts                # Discord channel (reference implementation)
+│   └── executor/
+│       ├── workspace.ts               # AcWorkspace — physical workspace manager
+│       ├── tmux-bridge.ts             # TmuxBridge — persistent agent sessions
+│       ├── diff-summarizer.ts         # Gemini-powered git diff summaries
+│       └── playwright-verifier.ts     # Playwright UI verification
 │
 ├── container/
-│   ├── Dockerfile                 # Container image (runs as 'node' user, includes Claude Code CLI)
-│   ├── build.sh                   # Build script for container image
-│   ├── agent-runner/              # Code that runs inside the container
-│   │   ├── package.json
-│   │   ├── tsconfig.json
-│   │   └── src/
-│   │       ├── index.ts           # Entry point (query loop, IPC polling, session resume)
-│   │       └── ipc-mcp-stdio.ts   # Stdio-based MCP server for host communication
-│   └── skills/
-│       └── agent-browser.md       # Browser automation skill
+│   ├── Dockerfile                     # Container image for container mode
+│   └── agent-runner/                  # Agent execution code (used by both modes)
+│       ├── package.json
+│       └── src/index.ts               # Agent runner entry point
 │
-├── dist/                          # Compiled JavaScript (gitignored)
+├── skills/                            # CLI-agnostic skill packages
+│   ├── setup/SKILL.md                 # First-time installation guide
+│   ├── debug/SKILL.md                 # Container/agent debugging
+│   ├── add-discord/                   # Discord channel skill
+│   ├── add-telegram/                  # Telegram channel skill
+│   └── ...                            # Other skills
 │
-├── .claude/
-│   └── skills/
-│       ├── setup/SKILL.md              # /setup - First-time installation
-│       ├── customize/SKILL.md          # /customize - Add capabilities
-│       ├── debug/SKILL.md              # /debug - Container debugging
-│       ├── add-telegram/SKILL.md       # /add-telegram - Telegram channel
-│       ├── add-gmail/SKILL.md          # /add-gmail - Gmail integration
-│       ├── add-voice-transcription/    # /add-voice-transcription - Whisper
-│       ├── x-integration/SKILL.md      # /x-integration - X/Twitter
-│       ├── convert-to-apple-container/  # /convert-to-apple-container - Apple Container runtime
-│       └── add-parallel/SKILL.md       # /add-parallel - Parallel agents
+├── launchd/
+│   └── com.aquaclaw.plist             # macOS launchd service definition
 │
-├── groups/
-│   ├── CLAUDE.md                  # Global memory (all groups read this)
-│   ├── {channel}_main/             # Main control channel (e.g., whatsapp_main/)
-│   │   ├── CLAUDE.md              # Main channel memory
-│   │   └── logs/                  # Task execution logs
-│   └── {channel}_{group-name}/    # Per-group folders (created on registration)
-│       ├── CLAUDE.md              # Group-specific memory
-│       ├── logs/                  # Task logs for this group
-│       └── *.md                   # Files created by the agent
-│
-├── store/                         # Local data (gitignored)
-│   ├── auth/                      # WhatsApp authentication state
-│   └── messages.db                # SQLite database (messages, chats, scheduled_tasks, task_run_logs, registered_groups, sessions, router_state)
-│
-├── data/                          # Application state (gitignored)
-│   ├── sessions/                  # Per-group session data (.claude/ dirs with JSONL transcripts)
-│   ├── env/env                    # Copy of .env for container mounting
-│   └── ipc/                       # Container IPC (messages/, tasks/)
-│
-├── logs/                          # Runtime logs (gitignored)
-│   ├── aquaclaw.log               # Host stdout
-│   └── aquaclaw.error.log         # Host stderr
-│   # Note: Per-container logs are in groups/{folder}/logs/container-*.log
-│
-└── launchd/
-    └── com.aquaclaw.plist         # macOS service configuration
+└── .env                               # Environment configuration (gitignored)
+
+~/aquaclaw/                            # Runtime data (outside project root)
+├── factory/                           # Physical workspaces (one per task)
+│   ├── {thread-id}/                   # Workspace for a Discord thread
+│   │   ├── .git/                      # Cloned repository
+│   │   ├── screenshots/               # Playwright captures
+│   │   ├── logs/                      # Agent execution logs
+│   │   └── ipc/                       # Input/output for agent runner
+│   └── ...
+├── store/
+│   ├── messages.db                    # SQLite database
+│   └── auth/                          # Channel auth data (WhatsApp sessions)
+├── groups/                            # Group memory folders
+│   ├── CLAUDE.md                      # Global memory (all groups)
+│   └── {group-name}/
+│       └── CLAUDE.md                  # Per-group memory
+├── data/
+│   ├── env/env                        # Filtered secrets for container mode
+│   └── sessions/{group}/.claude/      # Session transcripts
+├── config/
+│   └── environments/                  # Environment seeds for auto-bootstrap
+│       ├── {repo-name}.env            # Root .env seed
+│       └── {repo-name}/              # Granular env overlay (recursive copy)
+└── logs/
+    └── aquaclaw.log                   # Service log
 ```
 
 ---
 
-## Configuration
+## Physical Mode (AcWorkspace + TmuxBridge)
 
-Configuration constants are in `src/config.ts`:
+Physical mode is the primary execution model. Each task gets an isolated workspace on the host filesystem.
 
-```typescript
-import path from 'path';
+### Workspace Lifecycle
 
-export const ASSISTANT_NAME = process.env.ASSISTANT_NAME || 'Andy';
-export const POLL_INTERVAL = 2000;
-export const SCHEDULER_POLL_INTERVAL = 60000;
+1. **Creation** — `AcWorkspace` creates `~/aquaclaw/factory/{id}/` with subdirectories (`screenshots/`, `logs/`, `ipc/`)
+2. **Bootstrap** (if GitHub URL provided):
+   - `git clone` → branch checkout
+   - Environment seeding from `~/aquaclaw/config/environments/`
+   - Auto-detect and run setup scripts (`setup.sh`, `bootstrap.sh`, `init.sh`)
+   - Auto-detect package manager (`pnpm install` or `npm install`)
+3. **File Watching** — `chokidar` monitors the workspace, excluding `node_modules/`, `.git/`, `dist/`, `logs/`
+4. **Agent Execution** — `TmuxBridge` creates a persistent tmux session running the `agent-runner`
+5. **Teardown** — `workspace.stop()` closes watcher and Playwright browser
 
-// Paths are absolute (required for container mounts)
-const PROJECT_ROOT = process.cwd();
-export const STORE_DIR = path.resolve(PROJECT_ROOT, 'store');
-export const GROUPS_DIR = path.resolve(PROJECT_ROOT, 'groups');
-export const DATA_DIR = path.resolve(PROJECT_ROOT, 'data');
+### Environment Seeding
 
-// Container configuration
-export const CONTAINER_IMAGE = process.env.CONTAINER_IMAGE || 'aquaclaw-agent:latest';
-export const CONTAINER_TIMEOUT = parseInt(process.env.CONTAINER_TIMEOUT || '1800000', 10); // 30min default
-export const IPC_POLL_INTERVAL = 1000;
-export const IDLE_TIMEOUT = parseInt(process.env.IDLE_TIMEOUT || '1800000', 10); // 30min — keep container alive after last result
-export const MAX_CONCURRENT_CONTAINERS = Math.max(1, parseInt(process.env.MAX_CONCURRENT_CONTAINERS || '5', 10) || 5);
+For repositories with complex environment requirements (e.g., monorepos), AquaClaw supports granular environment seeding:
 
-export const TRIGGER_PATTERN = new RegExp(`^@${ASSISTANT_NAME}\\b`, 'i');
+```
+~/aquaclaw/config/environments/
+├── my-project.env              # Simple: copies to workspace root as .env
+└── my-monorepo/                # Granular: recursively overlays the workspace
+    ├── .env                    # Root .env
+    ├── packages/api/.env       # Nested .env for API package
+    └── packages/web/.env       # Nested .env for web package
 ```
 
-**Note:** Paths must be absolute for container volume mounts to work correctly.
+### Observability Features
 
-### Container Configuration
+| Feature | Component | How It Works |
+|---------|-----------|-------------|
+| **Delta Feed** | `DiffSummarizer` | Runs `git diff HEAD`, sends to Gemini 2.0 Flash for a one-sentence summary. Throttled to 1/minute. Requires `AC_GEMINI_API_KEY`. |
+| **Screenshot Relay** | `chokidar` watcher | New files in `screenshots/` are automatically sent to the channel as media. |
+| **UI Verification** | `PlaywrightVerifier` | Captures full-page screenshots of a URL using headless Chromium (1280×800). Triggered by `/verify` command. |
 
-Groups can have additional directories mounted via `containerConfig` in the SQLite `registered_groups` table (stored as JSON in the `container_config` column). Example registration:
+### PR Automation
 
-```typescript
-registerGroup("1234567890@g.us", {
-  name: "Dev Team",
-  folder: "whatsapp_dev-team",
-  trigger: "@Andy",
-  added_at: new Date().toISOString(),
-  containerConfig: {
-    additionalMounts: [
-      {
-        hostPath: "~/projects/webapp",
-        containerPath: "webapp",
-        readonly: false,
-      },
-    ],
-    timeout: 600000,
-  },
-});
-```
+The `/push` command triggers `workspace.push()`:
 
-Folder names follow the convention `{channel}_{group-name}` (e.g., `whatsapp_family-chat`, `telegram_dev-team`). The main group has `isMain: true` set during registration.
+1. Collects conversation history from SQLite
+2. Generates a diff summary via DiffSummarizer
+3. Runs `gh pr create` with an auto-generated title and body
+4. If `AC_PREVIEW_URL_PATTERN` is set (e.g., `https://app-pr-${PR_NUMBER}.onrender.com`), includes a live preview URL
 
-Additional mounts appear at `/workspace/extra/{containerPath}` inside the container.
+### Port Isolation
 
-**Mount syntax note:** Read-write mounts use `-v host:container`, but readonly mounts require `--mount "type=bind,source=...,target=...,readonly"` (the `:ro` suffix may not work on all runtimes).
+`PortLocker` assigns unique ports (3000–3050) per workspace to prevent conflicts when multiple tasks run dev servers simultaneously.
 
-### Claude Authentication
+---
 
-Configure authentication in a `.env` file in the project root. Two options:
+## Agent CLI Authentication
 
-**Option 1: Claude Subscription (OAuth token)**
+Configure authentication in a `.env` file in the project root. The default CLI is Gemini (set via `AC_CODING_CLI`).
+
+**Gemini CLI** (default — uses Google One AI Premium subscription):
 ```bash
+# Login once with: gemini login
+# No API key needed — uses your Google account
+AC_CODING_CLI=gemini-cli
+```
+
+**Claude Code** (requires Anthropic API key or subscription):
+```bash
+AC_CODING_CLI=claude
 CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-...
+# Or: ANTHROPIC_API_KEY=sk-ant-api03-...
 ```
-The token can be extracted from `~/.claude/.credentials.json` if you're logged in to Claude Code.
-
-**Option 2: Pay-per-use API Key**
-```bash
-ANTHROPIC_API_KEY=sk-ant-api03-...
-```
-
-Only the authentication variables (`CLAUDE_CODE_OAUTH_TOKEN` and `ANTHROPIC_API_KEY`) are extracted from `.env` and written to `data/env/env`, then mounted into the container at `/workspace/env-dir/env` and sourced by the entrypoint script. This ensures other environment variables in `.env` are not exposed to the agent. This workaround is needed because some container runtimes lose `-e` environment variables when using `-i` (interactive mode with piped stdin).
 
 ### Changing the Assistant Name
 
-Set the `ASSISTANT_NAME` environment variable:
-
 ```bash
-ASSISTANT_NAME=Bot npm start
+# In .env
+ASSISTANT_NAME=Andy
 ```
 
-Or edit the default in `src/config.ts`. This changes:
-- The trigger pattern (messages must start with `@YourName`)
-- The response prefix (`YourName:` added automatically)
-
-### Placeholder Values in launchd
-
-Files with `{{PLACEHOLDER}}` values need to be configured:
-- `{{PROJECT_ROOT}}` - Absolute path to your aquaclaw installation
-- `{{NODE_PATH}}` - Path to node binary (detected via `which node`)
-- `{{HOME}}` - User's home directory
+The trigger pattern is auto-generated as `@{ASSISTANT_NAME}` (case-insensitive). Messages must start with this trigger to be processed (unless `requiresTrigger: false` for solo chats).
 
 ---
 
 ## Memory System
 
-AquaClaw uses a hierarchical memory system based on CLAUDE.md files.
+AquaClaw uses a hierarchical memory system based on instruction files (CLAUDE.md / GEMINI.md).
 
 ### Memory Hierarchy
 
-| Level | Location | Read By | Written By | Purpose |
-|-------|----------|---------|------------|---------|
-| **Global** | `groups/CLAUDE.md` | All groups | Main only | Preferences, facts, context shared across all conversations |
-| **Group** | `groups/{name}/CLAUDE.md` | That group | That group | Group-specific context, conversation memory |
-| **Files** | `groups/{name}/*.md` | That group | That group | Notes, research, documents created during conversation |
+| Level | File | Scope | Writable From |
+|-------|------|-------|---------------|
+| Global | `~/aquaclaw/groups/CLAUDE.md` | All groups | Main group only |
+| Group | `~/aquaclaw/groups/{name}/CLAUDE.md` | One group | That group |
 
-### How Memory Works
-
-1. **Agent Context Loading**
-   - Agent runs with `cwd` set to `groups/{group-name}/`
-   - Claude Agent SDK with `settingSources: ['project']` automatically loads:
-     - `../CLAUDE.md` (parent directory = global memory)
-     - `./CLAUDE.md` (current directory = group memory)
-
-2. **Writing Memory**
-   - When user says "remember this", agent writes to `./CLAUDE.md`
-   - When user says "remember this globally" (main channel only), agent writes to `../CLAUDE.md`
-   - Agent can create files like `notes.md`, `research.md` in the group folder
-
-3. **Main Channel Privileges**
-   - Only the "main" group (self-chat) can write to global memory
-   - Main can manage registered groups and schedule tasks for any group
-   - Main can configure additional directory mounts for any group
-   - All groups have Bash access (safe because it runs inside container)
+The AI coding CLI automatically loads project instructions:
+- `../CLAUDE.md` or `../GEMINI.md` (parent directory = global memory)
+- `./CLAUDE.md` or `./GEMINI.md` (current directory = group memory)
 
 ---
 
 ## Session Management
 
-Sessions enable conversation continuity - Claude remembers what you talked about.
+Sessions enable conversation continuity — the agent remembers what you talked about.
 
 ### How Sessions Work
 
-1. Each group has a session ID stored in SQLite (`sessions` table, keyed by `group_folder`)
-2. Session ID is passed to Claude Agent SDK's `resume` option
-3. Claude continues the conversation with full context
-4. Session transcripts are stored as JSONL files in `data/sessions/{group}/.claude/`
+1. Each group has a session ID tracked in SQLite (`sessions` table)
+2. Session ID is passed to the agent CLI's resume option
+3. The agent continues the conversation with full context
+4. Session transcripts are stored in `~/aquaclaw/data/sessions/{group}/.claude/`
+
+In physical mode, tmux sessions provide additional persistence — the agent survives process restarts.
 
 ---
 
 ## Message Flow
 
-### Incoming Message Flow
-
 ```
-1. User sends a message via any connected channel
+1. Channel receives message
    │
    ▼
-2. Channel receives message (e.g. Baileys for WhatsApp, Bot API for Telegram)
+2. Channel stores message to SQLite via onMessage callback
    │
    ▼
-3. Message stored in SQLite (store/messages.db)
+3. Message loop polls SQLite every 2 seconds
    │
    ▼
-4. Message loop polls SQLite (every 2 seconds)
+4. For each registered group with new messages:
+   ├── Check trigger pattern (@Andy)
+   ├── Skip if no trigger match (unless requiresTrigger: false)
+   └── Enqueue to GroupQueue
    │
    ▼
-5. Router checks:
-   ├── Is chat_jid in registered groups (SQLite)? → No: ignore
-   └── Does message match trigger pattern? → No: store but don't process
-   │
-   ▼
-6. Router catches up conversation:
-   ├── Fetch all messages since last agent interaction
-   ├── Format with timestamp and sender name
+5. GroupQueue processes (max 5 concurrent):
    └── Build prompt with full conversation context
    │
    ▼
-7. Router invokes Claude Agent SDK:
-   ├── cwd: groups/{group-name}/
-   ├── prompt: conversation history + current message
-   ├── resume: session_id (for continuity)
-   └── mcpServers: aquaclaw (scheduler)
+6. runAgent() dispatches to:
+   ├── Physical mode: AcWorkspace + TmuxBridge
+   │   ├── Create/reuse workspace in ~/aquaclaw/factory/{id}/
+   │   ├── Spawn tmux session running agent-runner
+   │   ├── Stream output via tmux capture-pane polling
+   │   └── Parse AQUACLAW_OUTPUT markers for structured results
+   │
+   └── Container mode (fallback): container-runner.ts
+       ├── Spawn Linux container with volume mounts
+       ├── Pipe prompt via stdin
+       └── Stream output via stdout/stderr
    │
    ▼
-8. Claude processes message:
-   ├── Reads CLAUDE.md files for context
+7. Agent processes message:
+   ├── Reads project instruction files for context
    └── Uses tools as needed (search, email, etc.)
    │
    ▼
-9. Router prefixes response with assistant name and sends via the owning channel
-   │
-   ▼
-10. Router updates last agent timestamp and saves session ID
+8. Result relayed back through channel
 ```
-
-### Trigger Word Matching
-
-Messages must start with the trigger pattern (default: `@Andy`):
-- `@Andy what's the weather?` → ✅ Triggers Claude
-- `@andy help me` → ✅ Triggers (case insensitive)
-- `Hey @Andy` → ❌ Ignored (trigger not at start)
-- `What's up?` → ❌ Ignored (no trigger)
-
-### Conversation Catch-Up
-
-When a triggered message arrives, the agent receives all messages since its last interaction in that chat. Each message is formatted with timestamp and sender name:
-
-```
-[Jan 31 2:32 PM] John: hey everyone, should we do pizza tonight?
-[Jan 31 2:33 PM] Sarah: sounds good to me
-[Jan 31 2:35 PM] John: @Andy what toppings do you recommend?
-```
-
-This allows the agent to understand the conversation context even if it wasn't mentioned in every message.
-
----
-
-## Commands
-
-### Commands Available in Any Group
-
-| Command | Example | Effect |
-|---------|---------|--------|
-| `@Assistant [message]` | `@Andy what's the weather?` | Talk to Claude |
-
-### Commands Available in Main Channel Only
-
-| Command | Example | Effect |
-|---------|---------|--------|
-| `@Assistant add group "Name"` | `@Andy add group "Family Chat"` | Register a new group |
-| `@Assistant remove group "Name"` | `@Andy remove group "Work Team"` | Unregister a group |
-| `@Assistant list groups` | `@Andy list groups` | Show registered groups |
-| `@Assistant remember [fact]` | `@Andy remember I prefer dark mode` | Add to global memory |
 
 ---
 
 ## Scheduled Tasks
 
-AquaClaw has a built-in scheduler that runs tasks as full agents in their group's context.
+Users can ask the agent to schedule recurring or one-time tasks from any group.
 
-### How Scheduling Works
-
-1. **Group Context**: Tasks created in a group run with that group's working directory and memory
-2. **Full Agent Capabilities**: Scheduled tasks have access to all tools (WebSearch, file operations, etc.)
-3. **Optional Messaging**: Tasks can send messages to their group using the `send_message` tool, or complete silently
-4. **Main Channel Privileges**: The main channel can schedule tasks for any group and view all tasks
-
-### Schedule Types
+### Task Types
 
 | Type | Value Format | Example |
-|------|--------------|---------|
-| `cron` | Cron expression | `0 9 * * 1` (Mondays at 9am) |
-| `interval` | Milliseconds | `3600000` (every hour) |
-| `once` | ISO timestamp | `2024-12-25T09:00:00Z` |
+|------|-------------|---------|
+| cron | Cron expression | `0 9 * * *` (daily at 9am) |
+| interval | Milliseconds | `3600000` (every hour) |
+| once | ISO 8601 timestamp | `2026-03-15T10:00:00Z` |
 
-### Creating a Task
+### MCP Tools Available to Agent
 
-```
-User: @Andy remind me every Monday at 9am to review the weekly metrics
+The `aquaclaw` MCP server exposes these tools inside the agent:
 
-Claude: [calls mcp__aquaclaw__schedule_task]
-        {
-          "prompt": "Send a reminder to review weekly metrics. Be encouraging!",
-          "schedule_type": "cron",
-          "schedule_value": "0 9 * * 1"
-        }
-
-Claude: Done! I'll remind you every Monday at 9am.
-```
-
-### One-Time Tasks
-
-```
-User: @Andy at 5pm today, send me a summary of today's emails
-
-Claude: [calls mcp__aquaclaw__schedule_task]
-        {
-          "prompt": "Search for today's emails, summarize the important ones, and send the summary to the group.",
-          "schedule_type": "once",
-          "schedule_value": "2024-01-31T17:00:00Z"
-        }
-```
-
-### Managing Tasks
-
-From any group:
-- `@Andy list my scheduled tasks` - View tasks for this group
-- `@Andy pause task [id]` - Pause a task
-- `@Andy resume task [id]` - Resume a paused task
-- `@Andy cancel task [id]` - Delete a task
-
-From main channel:
-- `@Andy list all tasks` - View tasks from all groups
-- `@Andy schedule task for "Family Chat": [prompt]` - Schedule for another group
-
----
-
-## MCP Servers
-
-### AquaClaw MCP (built-in)
-
-The `aquaclaw` MCP server is created dynamically per agent call with the current group's context.
-
-**Available Tools:**
-| Tool | Purpose |
-|------|---------|
-| `schedule_task` | Schedule a recurring or one-time task |
-| `list_tasks` | Show tasks (group's tasks, or all if main) |
-| `get_task` | Get task details and run history |
-| `update_task` | Modify task prompt or schedule |
+| Tool | Description |
+|------|-------------|
+| `schedule_task` | Create a scheduled task |
+| `list_tasks` | View scheduled tasks |
 | `pause_task` | Pause a task |
 | `resume_task` | Resume a paused task |
-| `cancel_task` | Delete a task |
-| `send_message` | Send a message to the group via its channel |
+| `cancel_task` | Cancel a task |
+| `send_message` | Send message to any chat (main only) or own chat |
+
+### Task Execution
+
+The scheduler loop runs every 60 seconds, checking for due tasks. Tasks execute through the same `runAgent()` path as regular messages, in the context of the group that created them.
 
 ---
 
-## Deployment
+## Group Management
 
-AquaClaw runs as a single macOS launchd service.
+### Registration
 
-### Startup Sequence
+Groups are registered in SQLite with:
+- `jid` — unique channel identifier
+- `name` — human-readable name
+- `folder` — disk folder name (validated: alphanumeric + hyphens only)
+- `trigger` — trigger pattern for this group
+- `isMain` — admin privileges flag
 
-When AquaClaw starts, it:
-1. **Ensures container runtime is running** - Automatically starts it if needed; kills orphaned AquaClaw containers from previous runs
-2. Initializes the SQLite database (migrates from JSON files if they exist)
-3. Loads state from SQLite (registered groups, sessions, router state)
-4. **Connects channels** — loops through registered channels, instantiates those with credentials, calls `connect()` on each
-5. Once at least one channel is connected:
-   - Starts the scheduler loop
-   - Starts the IPC watcher for container messages
-   - Sets up the per-group queue with `processGroupMessages`
-   - Recovers any unprocessed messages from before shutdown
-   - Starts the message polling loop
+### Main Group Privileges
 
-### Service: com.aquaclaw
+| Capability | Main | Non-Main |
+|------------|------|----------|
+| Write global memory | ✓ | ✗ |
+| Schedule tasks for any group | ✓ | Own only |
+| View all tasks | ✓ | Own only |
+| Send messages to other chats | ✓ | ✗ |
 
-**launchd/com.aquaclaw.plist:**
-```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "...">
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>com.aquaclaw</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>{{NODE_PATH}}</string>
-        <string>{{PROJECT_ROOT}}/dist/index.js</string>
-    </array>
-    <key>WorkingDirectory</key>
-    <string>{{PROJECT_ROOT}}</string>
-    <key>RunAtLoad</key>
-    <true/>
-    <key>KeepAlive</key>
-    <true/>
-    <key>EnvironmentVariables</key>
-    <dict>
-        <key>PATH</key>
-        <string>{{HOME}}/.local/bin:/usr/local/bin:/usr/bin:/bin</string>
-        <key>HOME</key>
-        <string>{{HOME}}</string>
-        <key>ASSISTANT_NAME</key>
-        <string>Andy</string>
-    </dict>
-    <key>StandardOutPath</key>
-    <string>{{PROJECT_ROOT}}/logs/aquaclaw.log</string>
-    <key>StandardErrorPath</key>
-    <string>{{PROJECT_ROOT}}/logs/aquaclaw.error.log</string>
-</dict>
-</plist>
-```
+---
 
-### Managing the Service
+## Database Schema
+
+SQLite database at `~/aquaclaw/store/messages.db`:
+
+| Table | Purpose |
+|-------|---------|
+| `chats` | Discovered chat/group metadata |
+| `messages` | All inbound/outbound messages |
+| `scheduled_tasks` | Task definitions and scheduling state |
+| `task_run_logs` | Task execution history |
+| `router_state` | Last-processed timestamps per chat |
+| `sessions` | Agent session IDs per group |
+| `registered_groups` | Group configuration |
+
+---
+
+## Configuration Reference
+
+### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `AC_CODING_CLI` | `gemini-cli` | AI CLI to use (`gemini-cli`, `claude`, `codex`) |
+| `ASSISTANT_NAME` | `Andy` | Trigger name and response prefix |
+| `ASSISTANT_HAS_OWN_NUMBER` | `false` | Solo chat mode (no trigger needed) |
+| `AC_GEMINI_API_KEY` | — | Gemini API key for Delta Feed summaries |
+| `AC_PREVIEW_URL_PATTERN` | — | Preview URL template (e.g., `https://app-pr-${PR_NUMBER}.onrender.com`) |
+| `CONTAINER_IMAGE` | `aquaclaw-agent:latest` | Container image for container mode |
+| `CONTAINER_TIMEOUT` | `1800000` (30min) | Max container lifetime |
+| `IDLE_TIMEOUT` | `1800000` (30min) | Container idle timeout |
+| `MAX_CONCURRENT_CONTAINERS` | `5` | Max simultaneous agents |
+| `TZ` | System timezone | Timezone for cron expressions |
+
+### Authentication Variables (filtered to agent)
+
+| Variable | CLI | Purpose |
+|----------|-----|---------|
+| `CLAUDE_CODE_OAUTH_TOKEN` | Claude Code | OAuth token for Claude subscription |
+| `ANTHROPIC_API_KEY` | Claude Code | API key for pay-per-use Claude |
+| `GEMINI_API_KEY` | Gemini CLI | API key (if not using Google account auth) |
+
+---
+
+## Service Management
+
+AquaClaw runs as a macOS launchd service:
 
 ```bash
-# Install service
-cp launchd/com.aquaclaw.plist ~/Library/LaunchAgents/
+# Start
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.aquaclaw.plist
 
-# Start service
-launchctl load ~/Library/LaunchAgents/com.aquaclaw.plist
+# Stop
+launchctl bootout gui/$(id -u)/com.aquaclaw
 
-# Stop service
-launchctl unload ~/Library/LaunchAgents/com.aquaclaw.plist
+# Restart
+launchctl kickstart -k gui/$(id -u)/com.aquaclaw
 
 # Check status
 launchctl list | grep aquaclaw
 
 # View logs
-tail -f logs/aquaclaw.log
-```
+tail -f ~/aquaclaw/logs/aquaclaw.log
 
----
-
-## Security Considerations
-
-### Container Isolation
-
-All agents run inside containers (lightweight Linux VMs), providing:
-- **Filesystem isolation**: Agents can only access mounted directories
-- **Safe Bash access**: Commands run inside the container, not on your Mac
-- **Network isolation**: Can be configured per-container if needed
-- **Process isolation**: Container processes can't affect the host
-- **Non-root user**: Container runs as unprivileged `node` user (uid 1000)
-
-### Prompt Injection Risk
-
-WhatsApp messages could contain malicious instructions attempting to manipulate Claude's behavior.
-
-**Mitigations:**
-- Container isolation limits blast radius
-- Only registered groups are processed
-- Trigger word required (reduces accidental processing)
-- Agents can only access their group's mounted directories
-- Main can configure additional directories per group
-- Claude's built-in safety training
-
-**Recommendations:**
-- Only register trusted groups
-- Review additional directory mounts carefully
-- Review scheduled tasks periodically
-- Monitor logs for unusual activity
-
-### Credential Storage
-
-| Credential | Storage Location | Notes |
-|------------|------------------|-------|
-| Claude CLI Auth | data/sessions/{group}/.claude/ | Per-group isolation, mounted to /home/node/.claude/ |
-| WhatsApp Session | store/auth/ | Auto-created, persists ~20 days |
-
-### File Permissions
-
-The groups/ folder contains personal memory and should be protected:
-```bash
-chmod 700 groups/
+# Rebuild after code changes
+npm run build && launchctl kickstart -k gui/$(id -u)/com.aquaclaw
 ```
 
 ---
 
 ## Troubleshooting
 
-### Common Issues
-
 | Issue | Cause | Solution |
 |-------|-------|----------|
-| No response to messages | Service not running | Check `launchctl list | grep aquaclaw` |
-| "Claude Code process exited with code 1" | Container runtime failed to start | Check logs; AquaClaw auto-starts container runtime but may fail |
-| "Claude Code process exited with code 1" | Session mount path wrong | Ensure mount is to `/home/node/.claude/` not `/root/.claude/` |
-| Session not continuing | Session ID not saved | Check SQLite: `sqlite3 store/messages.db "SELECT * FROM sessions"` |
-| Session not continuing | Mount path mismatch | Container user is `node` with HOME=/home/node; sessions must be at `/home/node/.claude/` |
-| "QR code expired" | WhatsApp session expired | Delete store/auth/ and restart |
-| "No groups registered" | Haven't added groups | Use `@Andy add group "Name"` in main |
-
-### Log Location
-
-- `logs/aquaclaw.log` - stdout
-- `logs/aquaclaw.error.log` - stderr
-
-### Debug Mode
-
-Run manually for verbose output:
-```bash
-npm run dev
-# or
-node dist/index.js
-```
+| No response to messages | Service not running | Check `launchctl list \| grep aquaclaw` |
+| Agent process exits with code 1 | Container runtime not available | Falls back to physical mode; check tmux sessions with `tmux ls` |
+| Agent process exits with code 1 | agent-runner not built | Run `pnpm --filter aquaclaw-agent-runner build` |
+| Session not continuing | Session ID not saved | Check SQLite: `sqlite3 ~/aquaclaw/store/messages.db "SELECT * FROM sessions"` |
+| No Delta Feed summaries | Missing API key | Set `AC_GEMINI_API_KEY` in `.env` |
+| `/push` fails | GitHub CLI not authenticated | Run `gh auth login` |
+| `/verify` fails | Playwright not installed | Run `npx playwright install chromium` |
+| Channel skipped at startup | Missing credentials | Check logs for WARN — provide required env vars |

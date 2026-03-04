@@ -4,7 +4,7 @@ on:
   pull_request:
     branches: [main]
     paths:
-      - '.claude/skills/**'
+      - 'skills/**'
       - 'skills-engine/**'
 
 jobs:
@@ -21,7 +21,7 @@ jobs:
       - name: Check for mixed skill + source changes
         run: |
           ADDED_SKILLS=$(git diff --name-only --diff-filter=A origin/main...HEAD \
-            | grep '^\\.claude/skills/' || true)
+            | grep '^\\skills/' || true)
           CHANGED=$(git diff --name-only origin/main...HEAD)
           SOURCE=$(echo "$CHANGED" \
             | grep -E '^src/|^container/|^package\.json|^package-lock\.json' || true)
@@ -70,8 +70,8 @@ jobs:
         id: detect
         run: |
           CHANGED_SKILLS=$(git diff --name-only origin/main...HEAD \
-            | grep '^\\.claude/skills/' \
-            | sed 's|^\.claude/skills/||' \
+            | grep '^\\skills/' \
+            | sed 's|^\skills/||' \
             | cut -d/ -f1 \
             | sort -u \
             | jq -R . | jq -s .)
@@ -106,7 +106,7 @@ jobs:
           "import { initAquaclawDir } from './skills-engine/index'; initAquaclawDir();"
 
       - name: Apply skill
-        run: npx tsx scripts/apply-skill.ts ".claude/skills/${{ matrix.skill }}"
+        run: npx tsx scripts/apply-skill.ts "skills/${{ matrix.skill }}"
 
       - name: Typecheck after apply
         run: npx tsc --noEmit
@@ -116,7 +116,7 @@ jobs:
           TEST_CMD=$(npx tsx -e "
             import { parse } from 'yaml';
             import fs from 'fs';
-            const m = parse(fs.readFileSync('.claude/skills/${{ matrix.skill }}/manifest.yaml', 'utf-8'));
+            const m = parse(fs.readFileSync('skills/${{ matrix.skill }}/manifest.yaml', 'utf-8'));
             if (m.test) console.log(m.test);
           ")
           if [ -n "$TEST_CMD" ]; then

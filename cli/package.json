@@ -1,0 +1,23 @@
+{
+  "name": "@aquaclaw/cli",
+  "version": "1.0.0",
+  "description": "AquaClaw CLI — bootstrap, manage skills, and control the service",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "ac": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "commander": "^13.0.0"
+  },
+  "peerDependencies": {
+    "aquaclaw": "workspace:*"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
