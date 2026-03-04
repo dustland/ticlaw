@@ -1,4 +1,4 @@
-import { generateText, type ModelMessage } from 'ai';
+import { generateText, hasToolCall, type ModelMessage } from 'ai';
 import { createOpenRouter } from '@openrouter/ai-sdk-provider';
 import type { ContainerOutput } from './core/types.js';
 import { buildExecutorTool } from './tools/executor.js';
@@ -97,7 +97,9 @@ IMPORTANT RULES:
         workspaceTool,
         executorTool,
       },
-
+      // Stop after tool execution — the executor is fire-and-forget,
+      // no need for a second LLM round-trip that may timeout.
+      stopWhen: [hasToolCall('executorTool'), hasToolCall('workspaceTool')],
       onStepFinish({ text, toolCalls }) {
         if (toolCalls.length > 0 && opts.onReply) {
           const names = toolCalls.map((t) => t.toolName).join(', ');
@@ -106,12 +108,27 @@ IMPORTANT RULES:
       },
     });
 
+    logger.info(
+      {
+        chatJid: opts.chatJid,
+        text: result.text?.slice(0, 200),
+        steps: result.steps.length,
+        toolCalls: result.steps.flatMap((s) =>
+          s.toolCalls.map((t) => t.toolName),
+        ),
+      },
+      'Agent result',
+    );
+
     if (result.text && result.text.trim()) {
       if (opts.onReply) await opts.onReply(result.text);
       return result.text;
     }
 
-    return 'Task dispatched.';
+    // Fallback: tools ran but no final text — still notify the user
+    const fallbackMsg = 'Task dispatched.';
+    if (opts.onReply) await opts.onReply(fallbackMsg);
+    return fallbackMsg;
   } catch (err: any) {
     logger.error({ err }, 'Agent generation failed');
     const fallback = `I encountered an error while thinking: ${err.message}`;
