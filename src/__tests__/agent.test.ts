@@ -6,17 +6,18 @@ import * as ai from 'ai';
 vi.mock('ai', () => ({
   generateText: vi.fn(),
   tool: vi.fn((x) => x),
+  hasToolCall: vi.fn(),
 }));
 
 vi.mock('@openrouter/ai-sdk-provider', () => ({
   createOpenRouter: vi.fn().mockReturnValue(() => 'mock-model'),
 }));
 
-vi.mock('../env.js', () => ({
+vi.mock('../core/env.js', () => ({
   readEnvFile: vi.fn().mockReturnValue({ OPENROUTER_API_KEY: 'test-key' }),
 }));
 
-vi.mock('../logger.js', () => ({
+vi.mock('../core/logger.js', () => ({
   logger: {
     info: vi.fn(),
     error: vi.fn(),
@@ -32,8 +33,8 @@ vi.mock('../tools/executor.js', () => ({
   }),
 }));
 
-vi.mock('../tools/setup-workspace.js', () => ({
-  buildSetupWorkspaceTool: vi.fn().mockReturnValue({
+vi.mock('../tools/workspace.js', () => ({
+  buildWorkspaceTool: vi.fn().mockReturnValue({
     execute: vi.fn().mockResolvedValue('Setup called'),
   }),
 }));
@@ -68,6 +69,7 @@ describe('Agent Orchestrator', () => {
     vi.mocked(ai.generateText).mockResolvedValueOnce({
       text: 'I have scheduled the requested work via tools.',
       toolCalls: [],
+      steps: [],
     } as any);
 
     const result = await runAgentOrchestrator(dummyOpts);

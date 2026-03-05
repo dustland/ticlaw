@@ -2,6 +2,13 @@ import { Executor } from './executor.js';
 import path from 'path';
 import os from 'os';
 import fs from 'fs';
+import { describe, it } from 'vitest';
+
+describe.skip('Executor E2E', () => {
+  it('runs the executor e2e test', async () => {
+    await test();
+  });
+});
 
 async function test() {
   process.env.http_proxy = 'http://127.0.0.1:7897';
@@ -51,7 +58,7 @@ async function test() {
   }, 30000);
 }
 
-test().catch((err) => {
-  console.error('Fatal error:', err);
-  process.exit(1);
-});
+// test().catch((err) => {
+//   console.error('Fatal error:', err);
+//   process.exit(1);
+// });
