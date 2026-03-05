@@ -34,6 +34,8 @@ export function readSecrets(): Record<string, string> {
   return secrets;
 }
 
+import { logger } from '../core/logger.js';
+
 export const buildExecutorTool = (
   group: RegisteredProject,
   workspacePath: string,
@@ -61,7 +63,17 @@ export const buildExecutorTool = (
         ),
     }),
     execute: async ({ prompt }: any) => {
-      return await executor.executePrompt(prompt);
+      try {
+        const result = await executor.executePrompt(prompt);
+        logger.info({ chatJid, result }, 'executorTool completed');
+        return result;
+      } catch (err: any) {
+        logger.error(
+          { chatJid, err: err.message, stack: err.stack },
+          'executorTool failed',
+        );
+        return `Error: ${err.message}`;
+      }
     },
   } as any);
 };
