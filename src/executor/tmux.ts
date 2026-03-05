@@ -80,7 +80,7 @@ export class TmuxBridge {
     for (const key of passthrough) {
       const val = process.env[key] || yamlEnv[key];
       if (val) {
-        exports.push(`${key}='${val}'`);
+        exports.push(`${key}='${val.replace(/'/g, "'\\''")}'`);
       }
     }
 
@@ -90,9 +90,9 @@ export class TmuxBridge {
         const token = execSync('gh auth token 2>/dev/null').toString().trim();
         if (token) {
           if (!process.env.GITHUB_TOKEN)
-            exports.push(`GITHUB_TOKEN='${token}'`);
+            exports.push(`GITHUB_TOKEN='${token.replace(/'/g, "'\\''")}'`);
           if (!process.env.GITHUB_MCP_PAT)
-            exports.push(`GITHUB_MCP_PAT='${token}'`);
+            exports.push(`GITHUB_MCP_PAT='${token.replace(/'/g, "'\\''")}'`);
         }
       } catch {
         /* gh not available */
@@ -130,8 +130,14 @@ export class TmuxBridge {
 
   async hasSession(): Promise<boolean> {
     return new Promise((resolve) => {
-      exec(`tmux has-session -t ${this.sessionId}`, (err) => {
-        resolve(!err);
+      // Using execFile or spawn is safer than exec to prevent injection
+      const tmux = spawn('tmux', ['has-session', '-t', this.sessionId]);
+      tmux.on('close', (code) => {
+        resolve(code === 0);
+      });
+      // Handle error so node doesn't crash if tmux is not installed
+      tmux.on('error', () => {
+        resolve(false);
       });
     });
   }
@@ -145,7 +151,11 @@ export class TmuxBridge {
       /* ignore */
     }
     return new Promise((resolve) => {
-      exec(`tmux kill-session -t ${this.sessionId}`, () => {
+      const tmux = spawn('tmux', ['kill-session', '-t', this.sessionId]);
+      tmux.on('close', () => {
+        resolve();
+      });
+      tmux.on('error', () => {
         resolve();
       });
     });

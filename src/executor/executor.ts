@@ -89,7 +89,8 @@ export class Executor {
             await onOutput({ status: 'success', result: parsed.response });
           }
         } catch (e) {
-          // Ignore non-JSON output from the shell or gemini
+          // Pass through raw output that fails to parse as JSON (maybe CLI error)
+          await onOutput({ status: 'success', result: line.trim() });
         }
       }
     });
@@ -105,9 +106,9 @@ export class Executor {
     const promptFile = path.join(workspacePath, `.prompt-${Date.now()}.txt`);
     fs.writeFileSync(promptFile, prompt);
 
-    // Build exports for secrets
+    // Build exports for secrets, using robust single-quote escaping for bash
     const exportsArray = Object.entries(secrets).map(
-      ([k, v]) => `export ${k}="${(v as string).replace(/"/g, '\\"')}"`,
+      ([k, v]) => `export ${k}='${(v as string).replace(/'/g, "'\\''")}'`,
     );
     const exportsCmd = exportsArray.join('\n');
 
@@ -119,7 +120,8 @@ export class Executor {
       'stream-json',
     ];
     if (sessionId) {
-      cliArgs.push('--resume', sessionId);
+      // Escape sessionId in case it contains spaces or quotes
+      cliArgs.push('--resume', `'${sessionId.replace(/'/g, "'\\''")}'`);
     }
 
     const cliCommand = codingCli || 'gemini';
