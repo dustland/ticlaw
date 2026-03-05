@@ -533,6 +533,19 @@ async function main(): Promise<void> {
     const ts = new Date().toISOString();
     lastAgentTimestamp[jid] = ts;
     setRouterState(jid, ts);
+    // Store bot response so conversation history includes assistant turns
+    if (text.trim()) {
+      storeMessage({
+        id: `bot-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        chat_jid: jid,
+        sender: ASSISTANT_NAME,
+        sender_name: ASSISTANT_NAME,
+        content: text,
+        timestamp: ts,
+        is_from_me: true,
+        is_bot_message: true,
+      });
+    }
   };
 
   createChannelFn = async (
