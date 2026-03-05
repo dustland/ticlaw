@@ -35,6 +35,10 @@ export function readSecrets(): Record<string, string> {
   return secrets;
 }
 
+function shellEscapeSingleQuoted(value: string): string {
+  return `'${value.replace(/'/g, `'"'"'`)}'`;
+}
+
 export interface ExecutorOptions {
   group: RegisteredProject;
   workspacePath: string;
@@ -88,7 +92,7 @@ export class Executor {
           } else if (parsed.response) {
             await onOutput({ status: 'success', result: parsed.response });
           }
-        } catch (e) {
+        } catch {
           // Ignore non-JSON output from the shell or gemini
         }
       }
@@ -98,41 +102,50 @@ export class Executor {
 
     if (!sessionExists) {
       await bridge.createSession(workspacePath);
-      bridge.startTailing();
     }
 
+    bridge.startTailing();
+
     // Write prompt to a temp file to avoid bash escaping issues
-    const promptFile = path.join(workspacePath, `.prompt-${Date.now()}.txt`);
+    const stamp = `${Date.now()}-${process.pid}`;
+    const promptFile = path.join(workspacePath, `.prompt-${stamp}.txt`);
     fs.writeFileSync(promptFile, prompt);
 
     // Build exports for secrets
     const exportsArray = Object.entries(secrets).map(
-      ([k, v]) => `export ${k}="${(v as string).replace(/"/g, '\\"')}"`,
+      ([k, v]) => `export ${k}=${shellEscapeSingleQuoted(v as string)}`,
     );
     const exportsCmd = exportsArray.join('\n');
 
     const cliArgs = [
       '-p',
-      `"$(cat ${path.basename(promptFile)})"`,
+      '"$(cat \"$PROMPT_FILE\")"',
       '-y',
       '-o',
       'stream-json',
     ];
     if (sessionId) {
-      cliArgs.push('--resume', sessionId);
+      cliArgs.push('--resume', shellEscapeSingleQuoted(sessionId));
     }
 
     const cliCommand = codingCli || 'gemini';
 
-    const runScript = path.join(workspacePath, `.run-${Date.now()}.sh`);
+    const runScript = path.join(workspacePath, `.run-${stamp}.sh`);
     const scriptContent = `#!/bin/bash
+set -euo pipefail
+cd ${shellEscapeSingleQuoted(workspacePath)}
+PROMPT_FILE=${shellEscapeSingleQuoted(promptFile)}
+OUTPUT_FILE=${shellEscapeSingleQuoted(bridge.outputPath)}
+cleanup() {
+  rm -f -- "$PROMPT_FILE" "$0"
+}
+trap cleanup EXIT
 ${exportsCmd}
-${cliCommand} ${cliArgs.join(' ')} >> ${bridge.outputPath} 2>&1
+${cliCommand} ${cliArgs.join(' ')} >> "$OUTPUT_FILE" 2>&1
 `;
-    fs.writeFileSync(runScript, scriptContent);
+    fs.writeFileSync(runScript, scriptContent, { mode: 0o700 });
 
-    // Execute directly
-    await bridge.sendKeys(`bash ${path.basename(runScript)}`);
+    await bridge.sendKeys(`bash ${shellEscapeSingleQuoted(runScript)}`);
 
     return 'Dispatched instruction to the workspace agent.';
   }

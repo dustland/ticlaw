@@ -24,25 +24,14 @@ describe('Executor Feature', () => {
     const dummyCliCode = `
       const fs = require('fs');
       
-      // The prompt is passed as -p "$$(cat prompt-file.txt)" from executor.ts
-      // Node receives it as "$(cat prompt-file.txt)"
+      // The prompt is passed as -p with the resolved prompt text from the shell
       const args = process.argv.slice(2);
       const promptArgIndex = args.indexOf('-p');
       let promptText = 'default';
       
       if (promptArgIndex !== -1 && args[promptArgIndex + 1]) {
         const rawArg = args[promptArgIndex + 1];
-        // Extract the filename from "$(cat FILENAME)"
-        if (rawArg.startsWith('$(cat ') && rawArg.endsWith(')')) {
-           const filename = rawArg.slice(6, -1);
-           try {
-             promptText = fs.readFileSync(filename, 'utf8');
-           } catch (e) {
-             promptText = 'Error reading file: ' + filename;
-           }
-        } else {
-           promptText = rawArg;
-        }
+        promptText = rawArg;
       }
 
       console.log(JSON.stringify({ type: 'init', session_id: 'dummy-session-123' }));

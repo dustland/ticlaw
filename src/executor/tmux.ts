@@ -1,8 +1,36 @@
-import { spawn, exec, execSync, ChildProcess } from 'child_process';
+import { spawn, execSync, ChildProcess } from 'child_process';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { logger } from '../core/logger.js';
+
+async function runTmux(args: string[]): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const tmux = spawn('tmux', args);
+    tmux.on('close', (code) => {
+      if (code === 0) {
+        resolve();
+      } else {
+        reject(new Error(`Tmux ${args[0]} exit code ${code}`));
+      }
+    });
+    tmux.on('error', (err) => {
+      reject(err);
+    });
+  });
+}
+
+async function runTmuxAllowCode(args: string[]): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const tmux = spawn('tmux', args);
+    tmux.on('close', (code) => {
+      resolve(code ?? 1);
+    });
+    tmux.on('error', (err) => {
+      reject(err);
+    });
+  });
+}
 
 export class TmuxBridge {
   private sessionId: string;
@@ -28,27 +56,9 @@ export class TmuxBridge {
       return;
     }
 
-    return new Promise((resolve, reject) => {
-      const tmux = spawn('tmux', [
-        'new-session',
-        '-d',
-        '-s',
-        this.sessionId,
-        '-c',
-        cwd,
-      ]);
-
-      tmux.on('close', async (code) => {
-        if (code === 0) {
-          logger.info({ sessionId: this.sessionId }, 'Tmux session created');
-          await this.injectEnv();
-          resolve();
-        } else {
-          logger.error({ code }, 'Failed to create tmux session');
-          reject(new Error(`Tmux exit code ${code}`));
-        }
-      });
-    });
+    await runTmux(['new-session', '-d', '-s', this.sessionId, '-c', cwd]);
+    logger.info({ sessionId: this.sessionId }, 'Tmux session created');
+    await this.injectEnv();
   }
 
   /**
@@ -119,7 +129,7 @@ export class TmuxBridge {
     // Ensure file exists
     fs.writeFileSync(this.outputFile, '', { flag: 'a' });
 
-    this.tailProc = spawn('tail', ['-f', this.outputFile]);
+    this.tailProc = spawn('tail', ['-n', '0', '-F', this.outputFile]);
     this.tailProc.stdout?.on('data', (data: Buffer) => {
       this.onData(data.toString());
     });
@@ -129,11 +139,8 @@ export class TmuxBridge {
   }
 
   async hasSession(): Promise<boolean> {
-    return new Promise((resolve) => {
-      exec(`tmux has-session -t ${this.sessionId}`, (err) => {
-        resolve(!err);
-      });
-    });
+    const code = await runTmuxAllowCode(['has-session', '-t', this.sessionId]);
+    return code === 0;
   }
 
   async killSession(): Promise<void> {
@@ -144,11 +151,13 @@ export class TmuxBridge {
     } catch {
       /* ignore */
     }
-    return new Promise((resolve) => {
-      exec(`tmux kill-session -t ${this.sessionId}`, () => {
-        resolve();
-      });
-    });
+    const code = await runTmuxAllowCode(['kill-session', '-t', this.sessionId]);
+    if (code !== 0) {
+      logger.debug(
+        { sessionId: this.sessionId, code },
+        'Tmux session did not exist during kill',
+      );
+    }
   }
 
   /**
@@ -156,19 +165,7 @@ export class TmuxBridge {
    * To capture output, append ` >> {outputFile} 2>&1` to the command.
    */
   async sendKeys(keys: string): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const tmux = spawn('tmux', [
-        'send-keys',
-        '-t',
-        this.sessionId,
-        keys,
-        'C-m',
-      ]);
-      tmux.on('close', (code) => {
-        if (code === 0) resolve();
-        else reject(new Error(`Tmux send-keys exit code ${code}`));
-      });
-    });
+    await runTmux(['send-keys', '-t', this.sessionId, keys, 'C-m']);
   }
 
   /** Get the output file path so callers can redirect command output to it. */
