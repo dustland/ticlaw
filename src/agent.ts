@@ -103,7 +103,10 @@ IMPORTANT RULES:
       onStepFinish({ toolCalls }) {
         if (toolCalls.length > 0) {
           const names = toolCalls.map((t) => t.toolName).join(', ');
-          logger.info({ chatJid: opts.chatJid, tools: names }, 'Tool dispatched');
+          logger.info(
+            { chatJid: opts.chatJid, tools: names },
+            'Tool dispatched',
+          );
         }
       },
     });
