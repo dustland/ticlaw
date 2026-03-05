@@ -39,12 +39,36 @@ function shellEscapeSingleQuoted(value: string): string {
   return `'${value.replace(/'/g, `'"'"'`)}'`;
 }
 
+function extractText(value: unknown): string | null {
+  if (typeof value === 'string') return value;
+
+  if (Array.isArray(value)) {
+    const parts = value
+      .map((item) => extractText(item))
+      .filter((part): part is string => Boolean(part && part.trim()));
+    if (parts.length === 0) return null;
+    return parts.join('');
+  }
+
+  if (value && typeof value === 'object') {
+    const obj = value as Record<string, unknown>;
+    return (
+      extractText(obj.text) ??
+      extractText(obj.content) ??
+      extractText(obj.message) ??
+      extractText(obj.error)
+    );
+  }
+
+  return null;
+}
+
 export interface ExecutorOptions {
   group: RegisteredProject;
   workspacePath: string;
   sessionId?: string;
   codingCli?: string;
-  onOutput?: (output: ContainerOutput) => Promise<void>;
+  onOutput?: (output: ContainerOutput) => Promise<void> | void;
 }
 
 export class Executor {
@@ -58,44 +82,109 @@ export class Executor {
     const { group, workspacePath, sessionId, codingCli, onOutput } = this.opts;
 
     logger.info(
-      { group: group.name, prompt },
+      { group: group.name, workspacePath, prompt: prompt.slice(0, 200) },
       'Executing workspace agent via Executor',
     );
 
+    // Ensure workspace directory exists
+    if (!fs.existsSync(workspacePath)) {
+      logger.warn(
+        { workspacePath },
+        'Workspace directory does not exist — creating it',
+      );
+      fs.mkdirSync(workspacePath, { recursive: true });
+    }
+
     const secrets = readSecrets();
 
-    const bridge = new TmuxBridge(group.folder, async (data) => {
+    let bufferedChunk = '';
+    let outputQueue = Promise.resolve();
+
+    const emitMappedOutput = async (parsed: Record<string, unknown>): Promise<void> => {
       if (!onOutput) return;
 
-      const lines = data.split('\n');
-      for (const line of lines) {
-        if (!line.trim()) continue;
+      // Format mapping from coding CLI stream output to ContainerOutput.
+      if (parsed.type === 'init' && typeof parsed.session_id === 'string') {
+        await onOutput({
+          status: 'success',
+          result: null,
+          newSessionId: parsed.session_id,
+        });
+        return;
+      }
+
+      if (parsed.type === 'error') {
+        const errorText =
+          extractText(parsed.error) ??
+          extractText(parsed.message) ??
+          'Agent CLI reported an unknown error';
+        await onOutput({ status: 'error', result: null, error: errorText });
+        return;
+      }
+
+      if (parsed.type === 'result') {
+        if (parsed.status === 'error') {
+          const errorText =
+            extractText(parsed.error) ??
+            extractText(parsed.message) ??
+            'Agent CLI run failed';
+          await onOutput({ status: 'error', result: null, error: errorText });
+          return;
+        }
+
+        await onOutput({ status: 'success', result: null });
+        return;
+      }
+
+      if (parsed.type === 'message' && parsed.role === 'assistant') {
+        const contentText = extractText(parsed.content);
+        if (contentText) {
+          await onOutput({ status: 'success', result: contentText });
+        }
+        return;
+      }
+
+      const responseText = extractText(parsed.response);
+      if (responseText) {
+        await onOutput({ status: 'success', result: responseText });
+      }
+    };
+
+    const processChunk = async (data: string): Promise<void> => {
+      bufferedChunk += data;
+      const lines = bufferedChunk.split('\n');
+      bufferedChunk = lines.pop() ?? '';
+
+      for (const rawLine of lines) {
+        const line = rawLine.trim();
+        if (!line) continue;
 
         try {
-          const parsed = JSON.parse(line.trim());
-
-          // Format mapping from gemini to ContainerOutput
-          if (parsed.type === 'init' && parsed.session_id) {
-            await onOutput({
-              status: 'success',
-              result: null,
-              newSessionId: parsed.session_id,
-            });
-          } else if (
-            parsed.type === 'message' &&
-            parsed.role === 'assistant' &&
-            parsed.content
-          ) {
-            await onOutput({ status: 'success', result: parsed.content });
-          } else if (parsed.type === 'result') {
-            await onOutput({ status: 'success', result: null });
-          } else if (parsed.response) {
-            await onOutput({ status: 'success', result: parsed.response });
-          }
+          const parsed = JSON.parse(line) as Record<string, unknown>;
+          await emitMappedOutput(parsed);
         } catch {
-          // Ignore non-JSON output from the shell or gemini
+          // Ignore non-JSON output from the shell or coding CLI.
         }
       }
+
+      const maybeWholeLine = bufferedChunk.trim();
+      if (!maybeWholeLine) return;
+      try {
+        const parsed = JSON.parse(maybeWholeLine) as Record<string, unknown>;
+        bufferedChunk = '';
+        await emitMappedOutput(parsed);
+      } catch {
+        // Still incomplete; keep buffering.
+      }
+    };
+
+    const bridge = new TmuxBridge(group.folder, (data) => {
+      outputQueue = outputQueue
+        .then(() => processChunk(data))
+        .catch((err) => {
+          logger.warn({ err }, 'Failed to process executor output stream');
+        });
+      return outputQueue;
     });
 
     const sessionExists = await bridge.hasSession();
@@ -141,12 +230,30 @@ cleanup() {
 }
 trap cleanup EXIT
 ${exportsCmd}
-${cliCommand} ${cliArgs.join(' ')} >> "$OUTPUT_FILE" 2>&1
+set +e
+${cliCommand} ${cliArgs.join(' ')} 2>&1 | tee -a "$OUTPUT_FILE"
+CLI_EXIT_CODE=\${PIPESTATUS[0]}
+set -e
+if [ "$CLI_EXIT_CODE" -ne 0 ]; then
+  printf '{"type":"error","error":"Agent CLI exited with code %s"}\\n' "$CLI_EXIT_CODE" | tee -a "$OUTPUT_FILE"
+  exit "$CLI_EXIT_CODE"
+fi
 `;
     fs.writeFileSync(runScript, scriptContent, { mode: 0o700 });
 
-    await bridge.sendKeys(`bash ${shellEscapeSingleQuoted(runScript)}`);
-
-    return 'Dispatched instruction to the workspace agent.';
+    try {
+      await bridge.sendKeys(`bash ${shellEscapeSingleQuoted(runScript)}`);
+      logger.info(
+        { sessionId: `tc-${group.folder}`, script: runScript },
+        'Command sent to tmux session',
+      );
+      return 'Dispatched instruction to the workspace agent.';
+    } catch (err: any) {
+      logger.error({ err }, 'Failed to send command to tmux');
+      // Clean up temp files
+      try { fs.unlinkSync(promptFile); } catch { /* ignore */ }
+      try { fs.unlinkSync(runScript); } catch { /* ignore */ }
+      return `Error dispatching to workspace agent: ${err.message}`;
+    }
   }
 }

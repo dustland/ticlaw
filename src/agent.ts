@@ -119,6 +119,15 @@ IMPORTANT RULES:
         toolCalls: result.steps.flatMap((s) =>
           s.toolCalls.map((t) => t.toolName),
         ),
+        toolResults: result.steps.flatMap((s) =>
+          s.toolResults.map((t: any) => ({
+            tool: t.toolName,
+            result:
+              typeof t.result === 'string'
+                ? t.result.slice(0, 200)
+                : t.result,
+          })),
+        ),
       },
       'Agent result',
     );
@@ -128,7 +137,21 @@ IMPORTANT RULES:
       return result.text;
     }
 
-    // Fallback: tools ran but no final text — still notify the user
+    // Check if any tool returned an error message
+    const toolErrors = result.steps
+      .flatMap((s) => s.toolResults)
+      .filter(
+        (t: any) =>
+          typeof t.result === 'string' &&
+          t.result.toLowerCase().includes('error'),
+      );
+    if (toolErrors.length > 0) {
+      const errorMsg = `❌ ${(toolErrors[0] as any).result}`;
+      if (opts.onReply) await opts.onReply(errorMsg);
+      return errorMsg;
+    }
+
+    // Fallback: tools ran successfully but no final text
     const fallbackMsg = '🦀 Task dispatched to workspace agent.';
     if (opts.onReply) await opts.onReply(fallbackMsg);
     return fallbackMsg;
