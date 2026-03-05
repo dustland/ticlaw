@@ -365,7 +365,7 @@ export class DiscordChannel implements Channel {
           const sendable = channel as TextChannel | ThreadChannel;
           await sendable.sendTyping();
           const interval = setInterval(() => {
-            sendable.sendTyping().catch(() => { });
+            sendable.sendTyping().catch(() => {});
           }, 9000); // refresh every 9s before Discord's 10s timeout
           this.typingIntervals.set(channelId, interval);
         }
@@ -482,7 +482,10 @@ export class DiscordChannel implements Channel {
       const msg = await sendable.send({ content: text.slice(0, 2000) });
       return msg.id;
     } catch (err) {
-      logger.error({ jid, err }, 'Failed to send Discord message (returning ID)');
+      logger.error(
+        { jid, err },
+        'Failed to send Discord message (returning ID)',
+      );
       return null;
     }
   }

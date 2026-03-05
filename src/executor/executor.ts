@@ -232,9 +232,12 @@ export class Executor {
       '-o',
       'stream-json',
     ];
-    // NOTE: --resume is intentionally omitted. Passing --resume on first run
-    // causes Gemini CLI to exit with code 42 ("No previous sessions found").
-    // Session continuity is handled via conversation history in the prompt.
+    // Only pass --resume when we have a previously captured session ID.
+    // On first run, sessionId will be undefined; the init event emits the
+    // new session ID which the caller persists for subsequent runs.
+    if (sessionId) {
+      cliArgs.push('--resume', shellEscapeSingleQuoted(sessionId));
+    }
 
     const cliCommand = codingCli || 'gemini';
 

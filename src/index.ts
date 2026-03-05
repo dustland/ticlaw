@@ -32,7 +32,13 @@ import {
   getRecentMessages,
 } from './core/db.js';
 import { logger } from './core/logger.js';
-import { routeOutbound, routeOutboundFile, routeSetTyping, routeSendReturningId, routeEditMessage } from './router.js';
+import {
+  routeOutbound,
+  routeOutboundFile,
+  routeSetTyping,
+  routeSendReturningId,
+  routeEditMessage,
+} from './router.js';
 import { startSchedulerLoop } from './task-scheduler.js';
 import {
   AvailableProject,
@@ -127,7 +133,7 @@ async function processMessages(chatJid: string): Promise<boolean> {
       'processMessages: workspace check',
     );
 
-    const aiMessages = messages.map((m) => ({
+    const aiMessages = recentMessages.map((m) => ({
       role: (m.sender_name === ASSISTANT_NAME ? 'assistant' : 'user') as
         | 'assistant'
         | 'user',
@@ -156,7 +162,7 @@ async function processMessages(chatJid: string): Promise<boolean> {
         workspacePath: workspace,
         isMain: !!group.isMain,
         codingCli: TC_CODING_CLI,
-        sessionId: chatJid.replace(/[^a-zA-Z0-9]/g, '_'),
+        sessionId: sessions[group.folder],
         messages: aiMessages,
         sendFn,
         createChannelFn,
@@ -182,7 +188,12 @@ async function processMessages(chatJid: string): Promise<boolean> {
             streamBuf.timer = null;
             if (!streamBuf.messageId || !streamBuf.text) return;
             try {
-              await routeEditMessage(channels, chatJid, streamBuf.messageId, streamBuf.text);
+              await routeEditMessage(
+                channels,
+                chatJid,
+                streamBuf.messageId,
+                streamBuf.text,
+              );
             } catch (err) {
               logger.warn({ err }, 'Failed to edit streaming message');
             }
@@ -196,6 +207,17 @@ async function processMessages(chatJid: string): Promise<boolean> {
           };
 
           return async (output: ContainerOutput) => {
+            // Capture Gemini CLI session ID for future --resume
+            if (output.newSessionId) {
+              sessions[group.folder] = output.newSessionId;
+              setSession(group.folder, output.newSessionId);
+              logger.info(
+                { folder: group.folder, sessionId: output.newSessionId },
+                'Captured new Gemini CLI session ID',
+              );
+              return;
+            }
+
             if (output.result) {
               let text = output.result;
 
@@ -210,7 +232,10 @@ async function processMessages(chatJid: string): Promise<boolean> {
                   embeds.push(parsed);
                   text = text.replace(match[0], '').trim();
                 } catch (e) {
-                  logger.warn({ err: e, txt: match[1] }, 'Failed to parse embed JSON');
+                  logger.warn(
+                    { err: e, txt: match[1] },
+                    'Failed to parse embed JSON',
+                  );
                 }
               }
               if (embeds.length > 0) {
@@ -220,7 +245,10 @@ async function processMessages(chatJid: string): Promise<boolean> {
               if (!text.trim()) return;
 
               // If accumulated text would exceed limit, finalize current message
-              if (streamBuf.messageId && (streamBuf.text.length + text.length) > MAX_MSG_LENGTH) {
+              if (
+                streamBuf.messageId &&
+                streamBuf.text.length + text.length > MAX_MSG_LENGTH
+              ) {
                 if (streamBuf.timer) clearTimeout(streamBuf.timer);
                 await flushEdit();
                 // Reset for a new message
@@ -232,7 +260,11 @@ async function processMessages(chatJid: string): Promise<boolean> {
 
               if (!streamBuf.messageId) {
                 // First chunk: send a new message and capture its ID
-                const msgId = await routeSendReturningId(channels, chatJid, streamBuf.text);
+                const msgId = await routeSendReturningId(
+                  channels,
+                  chatJid,
+                  streamBuf.text,
+                );
                 if (msgId) {
                   streamBuf.messageId = msgId;
                 } else {
@@ -247,7 +279,18 @@ async function processMessages(chatJid: string): Promise<boolean> {
             }
 
             if (output.status === 'error' && output.error) {
-              streamBuf.text += (streamBuf.text ? '\n' : '') + `❌ Executor error: ${output.error}`;
+              // If exit code 42 (stale session), clear the stored session
+              // so the next invocation starts fresh
+              if (output.error.includes('code 42')) {
+                delete sessions[group.folder];
+                logger.info(
+                  { folder: group.folder },
+                  'Cleared stale Gemini CLI session',
+                );
+              }
+              streamBuf.text +=
+                (streamBuf.text ? '\n' : '') +
+                `❌ Executor error: ${output.error}`;
               if (streamBuf.timer) clearTimeout(streamBuf.timer);
               if (streamBuf.messageId) {
                 await flushEdit();
