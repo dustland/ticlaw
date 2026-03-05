@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { readEnvFile } from '../core/env.js';
 import { Executor } from '../executor/index.js';
 import { ContainerOutput, RegisteredProject } from '../core/types.js';
+import { logger } from '../core/logger.js';
 
 export function readSecrets(): Record<string, string> {
   const secrets = readEnvFile([
@@ -34,13 +35,11 @@ export function readSecrets(): Record<string, string> {
   return secrets;
 }
 
-import { logger } from '../core/logger.js';
-
 export const buildExecutorTool = (
   group: RegisteredProject,
   workspacePath: string,
   chatJid: string,
-  isMain: boolean,
+  _isMain: boolean,
   sessionId?: string,
   codingCli?: string,
   onOutput?: (output: ContainerOutput) => Promise<void> | void,
@@ -54,26 +53,35 @@ export const buildExecutorTool = (
   });
 
   return tool({
-    description: `Runs the AI coding agent inside a tmux session for the current workspace. Use this when the user asks you to perform a coding task, fix a bug, review a PR, change the architecture, or explore the codebase. Provide the precise prompt to instruct the agent on what to do. DO NOT attempt to write or edit code yourself. ALWAYS delegate codebase tasks to this tool.`,
-    parameters: z.object({
+    description:
+      'Runs the AI coding agent inside a tmux session for the current workspace. ' +
+      'Use this when the user asks you to perform a coding task, fix a bug, review a PR, ' +
+      'change the architecture, or explore the codebase. Provide the precise prompt to instruct ' +
+      'the agent on what to do. DO NOT attempt to write or edit code yourself. ' +
+      'ALWAYS delegate codebase tasks to this tool.',
+    inputSchema: z.object({
       prompt: z
         .string()
         .describe(
-          'The prompt to send to the workspace agent (e.g., "Fix issue #123" or "Review the latest changes").',
+          'The prompt to send to the workspace agent (e.g., "Fix issue #123").',
         ),
     }),
-    execute: async ({ prompt }: any) => {
+    execute: async ({ prompt }) => {
+      logger.info(
+        { chatJid, prompt: prompt.slice(0, 100) },
+        'executorTool called',
+      );
       try {
         const result = await executor.executePrompt(prompt);
         logger.info({ chatJid, result }, 'executorTool completed');
         return result;
-      } catch (err: any) {
-        logger.error(
-          { chatJid, err: err.message, stack: err.stack },
-          'executorTool failed',
-        );
-        return `Error: ${err.message}`;
+      } catch (err: unknown) {
+        const message =
+          err instanceof Error ? err.message : 'Unknown executor error';
+        const stack = err instanceof Error ? err.stack : undefined;
+        logger.error({ chatJid, err: message, stack }, 'executorTool failed');
+        return `Error: ${message}`;
       }
     },
-  } as any);
+  });
 };
