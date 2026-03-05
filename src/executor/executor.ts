@@ -39,6 +39,27 @@ function shellEscapeSingleQuoted(value: string): string {
   return `'${value.replace(/'/g, `'"'"'`)}'`;
 }
 
+/**
+ * Attempt to parse a line as JSON. If plain JSON.parse fails, try to find
+ * a JSON object embedded in the line (CLI stderr may precede the JSON).
+ */
+function tryParseJson(line: string): Record<string, unknown> | null {
+  try {
+    return JSON.parse(line) as Record<string, unknown>;
+  } catch {
+    // Try to extract JSON from a line like: "Error text...{\"type\":\"error\",...}"
+    const idx = line.indexOf('{');
+    if (idx > 0) {
+      try {
+        return JSON.parse(line.slice(idx)) as Record<string, unknown>;
+      } catch {
+        // Not valid JSON even from the first brace
+      }
+    }
+    return null;
+  }
+}
+
 function extractText(value: unknown): string | null {
   if (typeof value === 'string') return value;
 
@@ -161,22 +182,18 @@ export class Executor {
         const line = rawLine.trim();
         if (!line) continue;
 
-        try {
-          const parsed = JSON.parse(line) as Record<string, unknown>;
+        const parsed = tryParseJson(line);
+        if (parsed) {
           await emitMappedOutput(parsed);
-        } catch {
-          // Ignore non-JSON output from the shell or coding CLI.
         }
       }
 
       const maybeWholeLine = bufferedChunk.trim();
       if (!maybeWholeLine) return;
-      try {
-        const parsed = JSON.parse(maybeWholeLine) as Record<string, unknown>;
+      const parsed = tryParseJson(maybeWholeLine);
+      if (parsed) {
         bufferedChunk = '';
         await emitMappedOutput(parsed);
-      } catch {
-        // Still incomplete; keep buffering.
       }
     };
 
@@ -215,9 +232,9 @@ export class Executor {
       '-o',
       'stream-json',
     ];
-    if (sessionId) {
-      cliArgs.push('--resume', shellEscapeSingleQuoted(sessionId));
-    }
+    // NOTE: --resume is intentionally omitted. Passing --resume on first run
+    // causes Gemini CLI to exit with code 42 ("No previous sessions found").
+    // Session continuity is handled via conversation history in the prompt.
 
     const cliCommand = codingCli || 'gemini';
 
@@ -237,7 +254,7 @@ ${cliCommand} ${cliArgs.join(' ')} 2>&1 | tee -a "$OUTPUT_FILE"
 CLI_EXIT_CODE=\${PIPESTATUS[0]}
 set -e
 if [ "$CLI_EXIT_CODE" -ne 0 ]; then
-  printf '{"type":"error","error":"Agent CLI exited with code %s"}\\n' "$CLI_EXIT_CODE" | tee -a "$OUTPUT_FILE"
+  printf '\n{"type":"error","error":"Agent CLI exited with code %s"}\n' "$CLI_EXIT_CODE" | tee -a "$OUTPUT_FILE"
   exit "$CLI_EXIT_CODE"
 fi
 `;

@@ -102,6 +102,10 @@ export interface Channel {
   createChannel?(fromJid: string, channelName: string): Promise<string | null>;
   // Optional: check if a channel/JID still exists on the platform.
   channelExists?(jid: string): Promise<boolean>;
+  // Optional: send a message and return the platform message ID for later editing.
+  sendMessageReturningId?(jid: string, text: string): Promise<string | null>;
+  // Optional: edit an existing message by its platform message ID.
+  editMessage?(jid: string, messageId: string, text: string): Promise<void>;
 }
 
 // Callback type that channels use to deliver inbound messages

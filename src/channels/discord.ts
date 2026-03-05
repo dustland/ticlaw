@@ -365,7 +365,7 @@ export class DiscordChannel implements Channel {
           const sendable = channel as TextChannel | ThreadChannel;
           await sendable.sendTyping();
           const interval = setInterval(() => {
-            sendable.sendTyping().catch(() => {});
+            sendable.sendTyping().catch(() => { });
           }, 9000); // refresh every 9s before Discord's 10s timeout
           this.typingIntervals.set(channelId, interval);
         }
@@ -466,6 +466,42 @@ export class DiscordChannel implements Channel {
         'Failed to create Discord channel',
       );
       return null;
+    }
+  }
+
+  async sendMessageReturningId(
+    jid: string,
+    text: string,
+  ): Promise<string | null> {
+    if (!this.client) return null;
+    try {
+      const channelId = jid.replace(/^dc:/, '');
+      const channel = await this.client.channels.fetch(channelId);
+      if (!channel || !('send' in channel)) return null;
+      const sendable = channel as TextChannel | ThreadChannel;
+      const msg = await sendable.send({ content: text.slice(0, 2000) });
+      return msg.id;
+    } catch (err) {
+      logger.error({ jid, err }, 'Failed to send Discord message (returning ID)');
+      return null;
+    }
+  }
+
+  async editMessage(
+    jid: string,
+    messageId: string,
+    text: string,
+  ): Promise<void> {
+    if (!this.client) return;
+    try {
+      const channelId = jid.replace(/^dc:/, '');
+      const channel = await this.client.channels.fetch(channelId);
+      if (!channel || !('messages' in channel)) return;
+      const textChannel = channel as TextChannel | ThreadChannel;
+      const msg = await textChannel.messages.fetch(messageId);
+      await msg.edit({ content: text.slice(0, 2000) });
+    } catch (err) {
+      logger.error({ jid, messageId, err }, 'Failed to edit Discord message');
     }
   }
 

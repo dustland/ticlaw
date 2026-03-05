@@ -1,4 +1,4 @@
-# 🦀 TiClaw (雪蟹)
+# 🦀 TiClaw
 
 <p align="center">
   <img src="assets/ticlaw-logo.png" alt="TiClaw" width="400">

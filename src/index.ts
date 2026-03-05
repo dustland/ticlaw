@@ -32,7 +32,7 @@ import {
   getRecentMessages,
 } from './core/db.js';
 import { logger } from './core/logger.js';
-import { routeOutbound, routeOutboundFile, routeSetTyping } from './router.js';
+import { routeOutbound, routeOutboundFile, routeSetTyping, routeSendReturningId, routeEditMessage } from './router.js';
 import { startSchedulerLoop } from './task-scheduler.js';
 import {
   AvailableProject,
@@ -166,34 +166,98 @@ async function processMessages(chatJid: string): Promise<boolean> {
         onReply: async (text) => {
           await sendFn(chatJid, text);
         },
-        onOutput: async (output) => {
-          if (output.result) {
-            let text = output.result;
-            const embeds: any[] = [];
-            const embedRegex =
-              /(?:```(?:json)?\s*)?<discord_embed>\s*([\s\S]*?)\s*<\/discord_embed>(?:\s*```)?/g;
-            let match;
-            while ((match = embedRegex.exec(text)) !== null) {
-              try {
-                const parsed = JSON.parse(match[1]);
-                embeds.push(parsed);
-                text = text.replace(match[0], '').trim();
-              } catch (e) {
-                logger.warn({ err: e, txt: match[1] }, 'Failed to parse JSON');
+        onOutput: (() => {
+          // Streaming consolidation: accumulate text, send one message,
+          // then edit it as more chunks arrive (debounced).
+          const streamBuf = {
+            text: '',
+            messageId: null as string | null,
+            timer: null as ReturnType<typeof setTimeout> | null,
+          };
+
+          const EDIT_DEBOUNCE_MS = 1500;
+          const MAX_MSG_LENGTH = 1900; // leave 100 char headroom vs 2000 limit
+
+          const flushEdit = async () => {
+            streamBuf.timer = null;
+            if (!streamBuf.messageId || !streamBuf.text) return;
+            try {
+              await routeEditMessage(channels, chatJid, streamBuf.messageId, streamBuf.text);
+            } catch (err) {
+              logger.warn({ err }, 'Failed to edit streaming message');
+            }
+          };
+
+          const scheduleEdit = () => {
+            if (streamBuf.timer) clearTimeout(streamBuf.timer);
+            streamBuf.timer = setTimeout(() => {
+              flushEdit().catch(() => { });
+            }, EDIT_DEBOUNCE_MS);
+          };
+
+          return async (output: ContainerOutput) => {
+            if (output.result) {
+              let text = output.result;
+
+              // Extract <discord_embed> blocks and send them as separate messages
+              const embeds: any[] = [];
+              const embedRegex =
+                /(?:```(?:json)?\s*)?<discord_embed>\s*([\s\S]*?)\s*<\/discord_embed>(?:\s*```)?/g;
+              let match;
+              while ((match = embedRegex.exec(text)) !== null) {
+                try {
+                  const parsed = JSON.parse(match[1]);
+                  embeds.push(parsed);
+                  text = text.replace(match[0], '').trim();
+                } catch (e) {
+                  logger.warn({ err: e, txt: match[1] }, 'Failed to parse embed JSON');
+                }
+              }
+              if (embeds.length > 0) {
+                await sendFn(chatJid, '', { embeds });
+              }
+
+              if (!text.trim()) return;
+
+              // If accumulated text would exceed limit, finalize current message
+              if (streamBuf.messageId && (streamBuf.text.length + text.length) > MAX_MSG_LENGTH) {
+                if (streamBuf.timer) clearTimeout(streamBuf.timer);
+                await flushEdit();
+                // Reset for a new message
+                streamBuf.text = '';
+                streamBuf.messageId = null;
+              }
+
+              streamBuf.text += (streamBuf.text ? '\n' : '') + text;
+
+              if (!streamBuf.messageId) {
+                // First chunk: send a new message and capture its ID
+                const msgId = await routeSendReturningId(channels, chatJid, streamBuf.text);
+                if (msgId) {
+                  streamBuf.messageId = msgId;
+                } else {
+                  // Fallback: channel doesn't support edit, just send normally
+                  await sendFn(chatJid, streamBuf.text);
+                  streamBuf.text = '';
+                }
+              } else {
+                // Subsequent chunks: debounce an edit
+                scheduleEdit();
               }
             }
-            if (text.trim() || embeds.length > 0) {
-              await sendFn(
-                chatJid,
-                text,
-                embeds.length > 0 ? { embeds } : undefined,
-              );
+
+            if (output.status === 'error' && output.error) {
+              streamBuf.text += (streamBuf.text ? '\n' : '') + `❌ Executor error: ${output.error}`;
+              if (streamBuf.timer) clearTimeout(streamBuf.timer);
+              if (streamBuf.messageId) {
+                await flushEdit();
+              } else {
+                await sendFn(chatJid, streamBuf.text);
+                streamBuf.text = '';
+              }
             }
-          }
-          if (output.status === 'error' && output.error) {
-            await sendFn(chatJid, `❌ Executor error: ${output.error}`);
-          }
-        },
+          };
+        })(),
       });
 
       return true;
@@ -475,7 +539,7 @@ async function main(): Promise<void> {
 const isDirectRun =
   process.argv[1] &&
   new URL(import.meta.url).pathname ===
-    new URL(`file://${process.argv[1]}`).pathname;
+  new URL(`file://${process.argv[1]}`).pathname;
 
 if (isDirectRun) {
   main().catch((err) => {
