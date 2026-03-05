@@ -100,10 +100,10 @@ IMPORTANT RULES:
       // Stop after tool execution — the executor is fire-and-forget,
       // no need for a second LLM round-trip that may timeout.
       stopWhen: [hasToolCall('executorTool'), hasToolCall('workspaceTool')],
-      onStepFinish({ text, toolCalls }) {
-        if (toolCalls.length > 0 && opts.onReply) {
+      onStepFinish({ toolCalls }) {
+        if (toolCalls.length > 0) {
           const names = toolCalls.map((t) => t.toolName).join(', ');
-          opts.onReply(`🦀 Dispatching task to ${names}...`);
+          logger.info({ chatJid: opts.chatJid, tools: names }, 'Tool dispatched');
         }
       },
     });
@@ -126,7 +126,7 @@ IMPORTANT RULES:
     }
 
     // Fallback: tools ran but no final text — still notify the user
-    const fallbackMsg = 'Task dispatched.';
+    const fallbackMsg = '🦀 Task dispatched to workspace agent.';
     if (opts.onReply) await opts.onReply(fallbackMsg);
     return fallbackMsg;
   } catch (err: any) {
