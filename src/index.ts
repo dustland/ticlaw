@@ -215,6 +215,8 @@ async function processMessages(chatJid: string): Promise<boolean> {
                 { folder: group.folder, sessionId: output.newSessionId },
                 'Captured new Gemini CLI session ID',
               );
+              // Show typing while workspace agent is working
+              routeSetTyping(channels, chatJid, true);
               return;
             }
 
@@ -298,6 +300,8 @@ async function processMessages(chatJid: string): Promise<boolean> {
                 await sendFn(chatJid, streamBuf.text);
                 streamBuf.text = '';
               }
+              // Stop typing on error
+              routeSetTyping(channels, chatJid, false);
             }
           };
         })(),
