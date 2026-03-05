@@ -1,4 +1,4 @@
-import { generateText, hasToolCall, type ModelMessage } from 'ai';
+import { generateText, stepCountIs, type ModelMessage } from 'ai';
 import { createOpenRouter } from '@openrouter/ai-sdk-provider';
 import type { ContainerOutput } from './core/types.js';
 import { buildExecutorTool } from './tools/executor.js';
@@ -97,9 +97,10 @@ IMPORTANT RULES:
         workspaceTool,
         executorTool,
       },
-      // Stop after tool execution — the executor is fire-and-forget,
-      // no need for a second LLM round-trip that may timeout.
-      stopWhen: [hasToolCall('executorTool'), hasToolCall('workspaceTool')],
+      // Allow one LLM step (which includes tool execution), then stop.
+      // stepCountIs(2) means: complete step 1 (LLM → tool call → tool execution),
+      // then stop before step 2 (no second LLM round-trip that may timeout).
+      stopWhen: stepCountIs(2),
       onStepFinish({ toolCalls }) {
         if (toolCalls.length > 0) {
           const names = toolCalls.map((t) => t.toolName).join(', ');
