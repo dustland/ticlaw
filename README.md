@@ -57,7 +57,7 @@ TiClaw extends the philosophy of [NanoClaw](https://github.com/qwibitai/nanoclaw
 
 - macOS (optimized for Mac Mini) or Linux
 - Node.js 20+
-- [Gemini CLI](https://github.com/google/gemini-cli) (Default) or [Claude Code](https://claude.ai/download)
+- [Gemini CLI](https://github.com/google/gemini) (Default) or [Claude Code](https://claude.ai/download)
 - [Discord Bot Token](https://discord.com/developers/applications)
 
 ## Architecture

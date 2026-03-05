@@ -155,6 +155,7 @@ async function processMessages(chatJid: string): Promise<boolean> {
         group,
         workspacePath: workspace,
         isMain: !!group.isMain,
+        codingCli: TC_CODING_CLI,
         sessionId: chatJid.replace(/[^a-zA-Z0-9]/g, '_'),
         messages: aiMessages,
         sendFn,
@@ -189,8 +190,8 @@ async function processMessages(chatJid: string): Promise<boolean> {
               );
             }
           }
-          if (output.status === 'success') {
-            // idle notification handled conceptually by lock release
+          if (output.status === 'error' && output.error) {
+            await sendFn(chatJid, `❌ Executor error: ${output.error}`);
           }
         },
       });

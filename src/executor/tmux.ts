@@ -4,6 +4,10 @@ import os from 'os';
 import path from 'path';
 import { logger } from '../core/logger.js';
 
+function shellEscapeSingleQuoted(value: string): string {
+  return `'${value.replace(/'/g, `'"'"'`)}'`;
+}
+
 async function runTmux(args: string[]): Promise<void> {
   return new Promise((resolve, reject) => {
     const tmux = spawn('tmux', args);
@@ -34,11 +38,14 @@ async function runTmuxAllowCode(args: string[]): Promise<number> {
 
 export class TmuxBridge {
   private sessionId: string;
-  private onData: (data: string) => void;
+  private onData: (data: string) => void | Promise<void>;
   private tailProc: ChildProcess | null = null;
   private outputFile: string;
 
-  constructor(sessionId: string, onData: (data: string) => void) {
+  constructor(
+    sessionId: string,
+    onData: (data: string) => void | Promise<void>,
+  ) {
     this.sessionId = `tc-${sessionId}`;
     this.onData = onData;
     this.outputFile = path.join(os.tmpdir(), `ticlaw-${this.sessionId}.log`);
@@ -90,7 +97,7 @@ export class TmuxBridge {
     for (const key of passthrough) {
       const val = process.env[key] || yamlEnv[key];
       if (val) {
-        exports.push(`${key}='${val}'`);
+        exports.push(`${key}=${shellEscapeSingleQuoted(val)}`);
       }
     }
 
@@ -100,9 +107,9 @@ export class TmuxBridge {
         const token = execSync('gh auth token 2>/dev/null').toString().trim();
         if (token) {
           if (!process.env.GITHUB_TOKEN)
-            exports.push(`GITHUB_TOKEN='${token}'`);
+            exports.push(`GITHUB_TOKEN=${shellEscapeSingleQuoted(token)}`);
           if (!process.env.GITHUB_MCP_PAT)
-            exports.push(`GITHUB_MCP_PAT='${token}'`);
+            exports.push(`GITHUB_MCP_PAT=${shellEscapeSingleQuoted(token)}`);
         }
       } catch {
         /* gh not available */
@@ -131,7 +138,12 @@ export class TmuxBridge {
 
     this.tailProc = spawn('tail', ['-n', '0', '-F', this.outputFile]);
     this.tailProc.stdout?.on('data', (data: Buffer) => {
-      this.onData(data.toString());
+      Promise.resolve(this.onData(data.toString())).catch((err) => {
+        logger.warn({ err }, 'Tmux output handler failed');
+      });
+    });
+    this.tailProc.on('error', (err) => {
+      logger.warn({ err, sessionId: this.sessionId }, 'Failed to tail output');
     });
     this.tailProc.on('close', () => {
       this.tailProc = null;

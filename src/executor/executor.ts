@@ -100,7 +100,9 @@ export class Executor {
     let bufferedChunk = '';
     let outputQueue = Promise.resolve();
 
-    const emitMappedOutput = async (parsed: Record<string, unknown>): Promise<void> => {
+    const emitMappedOutput = async (
+      parsed: Record<string, unknown>,
+    ): Promise<void> => {
       if (!onOutput) return;
 
       // Format mapping from coding CLI stream output to ContainerOutput.
@@ -251,8 +253,16 @@ fi
     } catch (err: any) {
       logger.error({ err }, 'Failed to send command to tmux');
       // Clean up temp files
-      try { fs.unlinkSync(promptFile); } catch { /* ignore */ }
-      try { fs.unlinkSync(runScript); } catch { /* ignore */ }
+      try {
+        fs.unlinkSync(promptFile);
+      } catch {
+        /* ignore */
+      }
+      try {
+        fs.unlinkSync(runScript);
+      } catch {
+        /* ignore */
+      }
       return `Error dispatching to workspace agent: ${err.message}`;
     }
   }

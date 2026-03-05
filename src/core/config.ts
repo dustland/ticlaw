@@ -19,7 +19,7 @@ export const ASSISTANT_HAS_OWN_NUMBER =
   (process.env.ASSISTANT_HAS_OWN_NUMBER ||
     envConfig.ASSISTANT_HAS_OWN_NUMBER) === 'true';
 export const TC_CODING_CLI =
-  process.env.TC_CODING_CLI || envConfig.TC_CODING_CLI || 'gemini-cli';
+  process.env.TC_CODING_CLI || envConfig.TC_CODING_CLI || 'gemini';
 export const POLL_INTERVAL = 2000;
 export const SCHEDULER_POLL_INTERVAL = 60000;
 

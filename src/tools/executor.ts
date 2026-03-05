@@ -41,7 +41,7 @@ export const buildExecutorTool = (
   isMain: boolean,
   sessionId?: string,
   codingCli?: string,
-  onOutput?: (output: ContainerOutput) => Promise<void>,
+  onOutput?: (output: ContainerOutput) => Promise<void> | void,
 ) => {
   const executor = new Executor({
     group,

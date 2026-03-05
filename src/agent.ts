@@ -123,9 +123,7 @@ IMPORTANT RULES:
           s.toolResults.map((t: any) => ({
             tool: t.toolName,
             result:
-              typeof t.result === 'string'
-                ? t.result.slice(0, 200)
-                : t.result,
+              typeof t.result === 'string' ? t.result.slice(0, 200) : t.result,
           })),
         ),
       },

@@ -4,6 +4,7 @@ import path from 'path';
 
 import {
   ASSISTANT_NAME,
+  TC_CODING_CLI,
   SCHEDULER_POLL_INTERVAL,
   TIMEZONE,
 } from './core/config.js';
@@ -98,6 +99,7 @@ async function runTask(
       group,
       workspacePath: groupDir,
       isMain: !!group.isMain,
+      codingCli: TC_CODING_CLI,
       sessionId: `cron_${task.id.replace(/[^a-zA-Z0-9]/g, '_')}`,
       messages: aiMessages,
       // Minimal mocked functions for the orchestrator, since we're just running a background job
