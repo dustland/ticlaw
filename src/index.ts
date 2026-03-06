@@ -303,6 +303,11 @@ async function processMessages(chatJid: string): Promise<boolean> {
               // Stop typing on error
               routeSetTyping(channels, chatJid, false);
             }
+
+            // Stop typing on completion (final result event has status but no text)
+            if (output.status === 'success' && !output.result) {
+              routeSetTyping(channels, chatJid, false);
+            }
           };
         })(),
       });
@@ -345,6 +350,9 @@ export function _setRegisteredProjects(
 }
 
 function registerProject(jid: string, group: RegisteredProject): void {
+  // Ensure a chats row exists for this JID before registering,
+  // so that subsequent message storage doesn't fail with FK constraint.
+  storeChatMetadata(jid, new Date().toISOString(), group.name);
   setRegisteredProject(jid, group);
   registeredProjects[jid] = group;
   logger.info({ jid, folder: group.folder }, 'Group registered');

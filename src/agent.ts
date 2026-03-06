@@ -1,7 +1,7 @@
 import { generateText, stepCountIs, type ModelMessage } from 'ai';
 import { createOpenRouter } from '@openrouter/ai-sdk-provider';
 import type { ContainerOutput } from './core/types.js';
-import { buildExecutorTool } from './tools/executor.js';
+import { buildSessionTools } from './tools/executor.js';
 import { buildWorkspaceTool } from './tools/workspace.js';
 import { readEnvFile } from './core/env.js';
 import { logger } from './core/logger.js';
@@ -31,6 +31,49 @@ export function getModelName(): string {
 }
 
 /**
+ * Lightweight LLM call to interpret a raw Gemini screen and format for Discord.
+ * Used by the async idle callback — no tools, just text in → text out.
+ */
+async function interpretScreen(
+  screenContent: string,
+  groupName: string,
+): Promise<string> {
+  const openrouter = getOpenRouter();
+  const model = getModelName();
+
+  const interpretPrompt = `You are formatting a terminal screen capture for Discord.
+
+The terminal shows output from Gemini CLI (an AI coding agent) working on the "${groupName}" repository.
+The GitHub repository is at: https://github.com/${groupName}
+
+## Your task
+
+Extract the meaningful response from the screen and format it for Discord.
+
+- Find text after the last "✦" marker — that's the agent's answer.
+- Ignore TUI chrome (status bars, separators, "Type your message", spinners, tool call boxes).
+- Include clickable GitHub links for commits, PRs, issues, and files.
+- Use Discord markdown: **bold**, \`code\`, > blockquotes, bullet lists.
+- Keep it concise and scannable.
+
+## Raw screen content
+
+${screenContent}`;
+
+  try {
+    const result = await generateText({
+      model: openrouter(model),
+      prompt: interpretPrompt,
+    });
+
+    return result.text || '🦀 Task completed but could not extract response.';
+  } catch (err) {
+    logger.error({ err }, 'Screen interpretation failed');
+    return '🦀 Task completed. Check the workspace agent for details.';
+  }
+}
+
+/**
  * The main agent loop that orchestrates tasks and uses manual tool abstraction.
  */
 export async function runAgentOrchestrator(opts: {
@@ -41,7 +84,7 @@ export async function runAgentOrchestrator(opts: {
   sessionId?: string;
   codingCli?: string;
   messages: Array<{ role: 'user' | 'assistant'; content: string }>;
-  onOutput?: (output: ContainerOutput) => Promise<void>;
+  onOutput?: (output: ContainerOutput) => Promise<void> | void;
   onReply?: (text: string) => Promise<void>;
   // For workspace setup tool
   sendFn: (jid: string, text: string) => Promise<void>;
@@ -55,7 +98,61 @@ export async function runAgentOrchestrator(opts: {
 
   logger.info({ model, chatJid: opts.chatJid }, 'Starting agent orchestrator');
 
-  const executorTool = buildExecutorTool(
+  // Async callback: when Gemini becomes idle after a prompt,
+  // interpret the screen and deliver the formatted result to Discord.
+  const onIdleCallback = async (screen: string) => {
+    logger.info(
+      { chatJid: opts.chatJid, screenLength: screen.length },
+      'Idle callback fired, interpreting screen',
+    );
+
+    try {
+      const formatted = await interpretScreen(screen, opts.group.name);
+      logger.info(
+        { chatJid: opts.chatJid, responseLength: formatted.length },
+        'Interpreted response, sending to Discord',
+      );
+      if (opts.onReply) await opts.onReply(formatted);
+    } catch (err) {
+      logger.error({ err, chatJid: opts.chatJid }, 'Idle callback failed');
+      if (opts.onReply) {
+        await opts.onReply('🦀 Task completed. Check the workspace agent for details.');
+      }
+    }
+  };
+
+  // Progress callback: fires periodically during long tasks.
+  // Uses a lightweight LLM call to summarize the current screen into a status update.
+  const onProgressCallback = async (screen: string, elapsedMs: number) => {
+    const elapsed = Math.round(elapsedMs / 1000);
+    logger.info({ chatJid: opts.chatJid, elapsed }, 'Progress update');
+
+    try {
+      const result = await generateText({
+        model: openrouter(model),
+        prompt: `You are summarizing what an AI coding agent is currently doing, based on its terminal screen capture.
+
+Return a SINGLE short sentence (max 15 words) describing the current activity. Start with a verb.
+Examples: "Reading seed-data.ts to find legacy table references", "Running unit tests", "Editing auth.ts to fix the login bug", "Searching for open issues in the repository"
+
+If unclear, just say "Working on the task".
+
+Raw screen:
+${screen}`,
+      });
+
+      const summary = result.text?.trim() || 'Working on the task';
+      const statusMsg = `⏳ (${elapsed}s) ${summary}`;
+
+      if (opts.onReply) {
+        await opts.onReply(statusMsg);
+      }
+    } catch (err) {
+      logger.warn({ err }, 'Progress summarization failed');
+    }
+  };
+
+  const { captureSessionTool, sendToSessionTool } = buildSessionTools(
     opts.group,
     opts.workspacePath,
     opts.chatJid,
@@ -63,6 +160,8 @@ export async function runAgentOrchestrator(opts: {
     opts.sessionId,
     opts.codingCli,
     opts.onOutput,
+    onIdleCallback,
+    onProgressCallback,
   );
 
   const workspaceTool = buildWorkspaceTool(
@@ -75,18 +174,55 @@ export async function runAgentOrchestrator(opts: {
   );
 
   const systemPrompt = `You are TiClaw 🦀, a Discord-based coding agent orchestrator.
-You manage tasks for the current repository "${opts.group.name}".
+You manage tasks for the repository "${opts.group.name}" by delegating work to an AI coding agent (Gemini CLI) running in a tmux terminal session.
 
-You have tools available to delegate work:
-1. \`workspaceTool\`: Set up (clone), update (git pull), or delete a GitHub repository workspace.
-2. \`executorTool\`: For ANY codebase task — coding, debugging, reviewing, answering questions about the repo, git operations, issue details, etc.
+## CRITICAL: Always delegate
 
-RULES:
-1. For ANY message related to the codebase or repository, IMMEDIATELY call \`executorTool\`. Do NOT ask for clarification — infer intent from conversation history and just call the tool.
-2. You have NO direct access to the repo. ONLY the executor does. NEVER try to answer repo questions yourself.
-3. When calling a tool, output NOTHING else — no explanation, no preamble. Just call the tool.
-4. For vague follow-ups (e.g. "show me comments", "fix it", "what about X"), use conversation history to determine what the user means, then call \`executorTool\` with a detailed prompt that includes the full context.
-5. Only answer directly (without tools) for greetings or questions clearly unrelated to the codebase.`;
+For ANY user message that is not a simple greeting (like "hi" or "thanks"), you MUST delegate to Gemini. NEVER answer user questions yourself. You do not have access to the codebase, the machine, system resources, git, or anything else — only Gemini does.
+
+If you find yourself about to type an answer without having called any tools, STOP and delegate to Gemini instead.
+
+## Your tools
+
+1. \`captureSessionTool\`: Reads the current terminal screen. Use \`waitForIdle=true\` to wait until Gemini is ready.
+2. \`sendToSessionTool\`: Types text into Gemini and presses Enter. **After sending, a background monitor automatically watches Gemini and delivers the result to Discord when done.** You do NOT need to capture the result yourself.
+3. \`workspaceTool\`: Clone, update, or delete a repository workspace.
+
+## Understanding the session
+
+The tmux session runs **Gemini CLI** — an AI coding agent with its own TUI. You communicate with Gemini by typing natural language prompts. Gemini reads the codebase, runs tools, and responds.
+
+**You do NOT run shell commands directly.** Always send natural language like "What was the last commit?" or "Fix the bug in auth.ts", never raw commands like "git log".
+
+### Session lifecycle (cold start)
+
+1. **Bare shell** (0-2s): Shell prompt with \`gemini -y\` being launched. NOT ready.
+2. **Loading** (2-20s): "Loading extension..." messages. NOT ready.
+3. **Idle** (after ~20s): "Type your message" visible. NOW ready.
+
+## Workflow
+
+For any user message (except greetings):
+
+1. **Capture** the screen to check Gemini's state.
+2. **If not ready** (shell prompt, loading, spinners): use \`captureSessionTool\` with waitForIdle=true to wait.
+3. **Send** the user's request via \`sendToSessionTool\`. Send ONCE only.
+4. **Acknowledge**: Tell the user their task has been sent. The background monitor will deliver Gemini's response automatically.
+
+That's it — you do NOT need to poll or capture after sending. The async monitor handles delivery.
+
+## Rules
+
+1. NEVER answer questions yourself. ALWAYS delegate to Gemini.
+2. NEVER send raw shell commands. Always natural language.
+3. NEVER re-send a prompt.
+4. NEVER ask "would you like me to proceed?" — just do it.
+
+## Formatting your acknowledgment
+
+When acknowledging a sent task, briefly confirm what you sent. For example:
+- "🦀 Asked Gemini to check the last commit. I'll post the answer shortly."
+- "🦀 Sent your bug fix request to Gemini. Will update you when it's done."`;
 
   try {
     const result = await generateText({
@@ -95,12 +231,10 @@ RULES:
       messages: opts.messages as ModelMessage[],
       tools: {
         workspaceTool,
-        executorTool,
+        captureSessionTool,
+        sendToSessionTool,
       },
-      // Allow one LLM step (which includes tool execution), then stop.
-      // stepCountIs(2) means: complete step 1 (LLM → tool call → tool execution),
-      // then stop before step 2 (no second LLM round-trip that may timeout).
-      stopWhen: stepCountIs(2),
+      stopWhen: stepCountIs(250),
       onStepFinish({ toolCalls }) {
         if (toolCalls.length > 0) {
           const names = toolCalls.map((t) => t.toolName).join(', ');
@@ -120,13 +254,6 @@ RULES:
         toolCalls: result.steps.flatMap((s) =>
           s.toolCalls.map((t) => t.toolName),
         ),
-        toolResults: result.steps.flatMap((s) =>
-          s.toolResults.map((t: any) => ({
-            tool: t.toolName,
-            result:
-              typeof t.result === 'string' ? t.result.slice(0, 200) : t.result,
-          })),
-        ),
       },
       'Agent result',
     );
@@ -136,22 +263,8 @@ RULES:
       return result.text;
     }
 
-    // Check if any tool returned an error message
-    const toolErrors = result.steps
-      .flatMap((s) => s.toolResults)
-      .filter(
-        (t: any) =>
-          typeof t.result === 'string' &&
-          t.result.toLowerCase().includes('error'),
-      );
-    if (toolErrors.length > 0) {
-      const errorMsg = `❌ ${(toolErrors[0] as any).result}`;
-      if (opts.onReply) await opts.onReply(errorMsg);
-      return errorMsg;
-    }
-
     // Fallback: tools ran successfully but no final text
-    const fallbackMsg = '🦀 Task dispatched to workspace agent.';
+    const fallbackMsg = '🦀 Task sent to workspace agent.';
     if (opts.onReply) await opts.onReply(fallbackMsg);
     return fallbackMsg;
   } catch (err: any) {

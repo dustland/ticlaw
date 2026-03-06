@@ -1,289 +1,259 @@
-import path from 'path';
 import fs from 'fs';
 import { logger } from '../core/logger.js';
-import { readEnvFile } from '../core/env.js';
-import { ContainerOutput, RegisteredProject } from '../core/types.js';
+import { RegisteredProject } from '../core/types.js';
 import { TmuxBridge } from './tmux.js';
-
-export function readSecrets(): Record<string, string> {
-  const secrets = readEnvFile([
-    'CLAUDE_CODE_OAUTH_TOKEN',
-    'ANTHROPIC_API_KEY',
-    'ANTHROPIC_BASE_URL',
-    'ANTHROPIC_AUTH_TOKEN',
-    'ANTHROPIC_MODEL',
-    'OPENROUTER_API_KEY',
-    'TC_MODEL',
-  ]);
-
-  if (secrets.OPENROUTER_API_KEY) {
-    if (!secrets.ANTHROPIC_API_KEY) {
-      secrets.ANTHROPIC_API_KEY = secrets.OPENROUTER_API_KEY;
-    }
-    if (!secrets.ANTHROPIC_BASE_URL) {
-      secrets.ANTHROPIC_BASE_URL = 'https://openrouter.ai/api/v1';
-    }
-    if (secrets.TC_MODEL) {
-      secrets.ANTHROPIC_MODEL = secrets.TC_MODEL;
-    } else if (!secrets.ANTHROPIC_MODEL) {
-      secrets.ANTHROPIC_MODEL = 'anthropic/claude-3.5-sonnet';
-    }
-  } else if (secrets.TC_MODEL && !secrets.ANTHROPIC_MODEL) {
-    secrets.ANTHROPIC_MODEL = secrets.TC_MODEL;
-  }
-
-  return secrets;
-}
-
-function shellEscapeSingleQuoted(value: string): string {
-  return `'${value.replace(/'/g, `'"'"'`)}'`;
-}
-
-/**
- * Attempt to parse a line as JSON. If plain JSON.parse fails, try to find
- * a JSON object embedded in the line (CLI stderr may precede the JSON).
- */
-function tryParseJson(line: string): Record<string, unknown> | null {
-  try {
-    return JSON.parse(line) as Record<string, unknown>;
-  } catch {
-    // Try to extract JSON from a line like: "Error text...{\"type\":\"error\",...}"
-    const idx = line.indexOf('{');
-    if (idx > 0) {
-      try {
-        return JSON.parse(line.slice(idx)) as Record<string, unknown>;
-      } catch {
-        // Not valid JSON even from the first brace
-      }
-    }
-    return null;
-  }
-}
-
-function extractText(value: unknown): string | null {
-  if (typeof value === 'string') return value;
-
-  if (Array.isArray(value)) {
-    const parts = value
-      .map((item) => extractText(item))
-      .filter((part): part is string => Boolean(part && part.trim()));
-    if (parts.length === 0) return null;
-    return parts.join('');
-  }
-
-  if (value && typeof value === 'object') {
-    const obj = value as Record<string, unknown>;
-    return (
-      extractText(obj.text) ??
-      extractText(obj.content) ??
-      extractText(obj.message) ??
-      extractText(obj.error)
-    );
-  }
-
-  return null;
-}
 
 export interface ExecutorOptions {
   group: RegisteredProject;
   workspacePath: string;
-  sessionId?: string;
   codingCli?: string;
-  onOutput?: (output: ContainerOutput) => Promise<void> | void;
+  /** String that appears in the terminal when the CLI is idle and ready for input */
+  idleIndicator?: string;
 }
 
+/**
+ * Thin wrapper around a tmux session.
+ * Operations: create session, send keys, capture screen, monitor for idle.
+ *
+ * The idle indicator is the one piece of per-CLI configuration —
+ * it tells us when the CLI is done working (e.g., "Type your message" for Gemini).
+ */
 export class Executor {
   private opts: ExecutorOptions;
+  private bridge: TmuxBridge;
+  private idleIndicator: string;
 
   constructor(opts: ExecutorOptions) {
     this.opts = opts;
+    this.bridge = new TmuxBridge(opts.group.folder);
+    this.idleIndicator = opts.idleIndicator || 'Type your message';
   }
 
-  async executePrompt(prompt: string): Promise<string> {
-    const { group, workspacePath, sessionId, codingCli, onOutput } = this.opts;
+  /**
+   * Ensure a tmux session exists. If not, create one and launch the CLI.
+   */
+  async ensureSession(): Promise<void> {
+    const { workspacePath, codingCli } = this.opts;
 
-    logger.info(
-      { group: group.name, workspacePath, prompt: prompt.slice(0, 200) },
-      'Executing workspace agent via Executor',
-    );
-
-    // Ensure workspace directory exists
     if (!fs.existsSync(workspacePath)) {
-      logger.warn(
-        { workspacePath },
-        'Workspace directory does not exist — creating it',
-      );
       fs.mkdirSync(workspacePath, { recursive: true });
     }
 
-    const secrets = readSecrets();
+    const exists = await this.bridge.hasSession();
+    if (!exists) {
+      await this.bridge.createSession(workspacePath, codingCli);
+      logger.info({ sessionId: this.bridge.session }, 'Session created');
+    }
+  }
 
-    let bufferedChunk = '';
-    let outputQueue = Promise.resolve();
+  /**
+   * Capture the current screen content of the session.
+   * Returns raw text — the caller interprets it.
+   */
+  async capture(): Promise<string> {
+    await this.ensureSession();
+    return this.bridge.capturePaneText();
+  }
 
-    const emitMappedOutput = async (
-      parsed: Record<string, unknown>,
-    ): Promise<void> => {
-      if (!onOutput) return;
+  /**
+   * Send a prompt (text + Enter) to the session.
+   * Returns immediately — does NOT wait for a response.
+   */
+  async send(prompt: string): Promise<void> {
+    await this.ensureSession();
+    await this.bridge.sendPrompt(prompt);
+    logger.info({ sessionId: this.bridge.session }, 'Text sent to session');
+  }
 
-      // Format mapping from coding CLI stream output to ContainerOutput.
-      if (parsed.type === 'init' && typeof parsed.session_id === 'string') {
-        await onOutput({
-          status: 'success',
-          result: null,
-          newSessionId: parsed.session_id,
-        });
+  /**
+   * Poll the pane until the CLI's idle indicator appears.
+   * Blocks until idle (used by captureSessionTool with waitForIdle=true).
+   */
+  async waitForIdle(
+    timeoutMs: number = 600_000,
+    pollMs: number = 3000,
+  ): Promise<string> {
+    await this.ensureSession();
+
+    const start = Date.now();
+    let lastLog = 0;
+
+    while (Date.now() - start < timeoutMs) {
+      const pane = await this.bridge.capturePaneText();
+
+      if (pane.includes(this.idleIndicator)) {
+        logger.info(
+          { elapsed: Date.now() - start, paneLength: pane.length },
+          'CLI is idle',
+        );
+        return pane;
+      }
+
+      if (Date.now() - lastLog > 30_000) {
+        logger.info(
+          { elapsed: Date.now() - start, paneLength: pane.length },
+          'Waiting for CLI to become idle...',
+        );
+        lastLog = Date.now();
+      }
+
+      await new Promise((r) => setTimeout(r, pollMs));
+    }
+
+    const finalPane = await this.bridge.capturePaneText();
+    logger.warn(
+      { elapsed: Date.now() - start, paneLength: finalPane.length },
+      'Timed out waiting for idle',
+    );
+    return finalPane;
+  }
+
+  /**
+   * Active monitor ID — used to cancel stale monitors when a new prompt is sent.
+   * Only the monitor whose ID matches this will fire the callback.
+   */
+  private _activeMonitorId: number = 0;
+
+  /**
+   * Start a non-blocking background monitor that polls the pane
+   * and calls `onIdle` when the CLI finishes processing.
+   *
+   * Two-phase approach:
+   *   Phase 1: Wait for idle indicator to DISAPPEAR (Gemini started working)
+   *   Phase 2: Wait for idle indicator to REAPPEAR (Gemini finished)
+   *
+   * During Phase 2, fires `onProgress(screen, elapsedMs)` periodically
+   * so the caller can send status updates to Discord.
+   *
+   * This prevents delivering stale responses from a previous task.
+   * Starting a new monitor cancels any previous one.
+   */
+  monitorForIdle(
+    onIdle: (screen: string) => void,
+    opts?: {
+      timeoutMs?: number;
+      pollMs?: number;
+      onProgress?: (screen: string, elapsedMs: number) => void;
+      progressIntervalMs?: number;
+    },
+  ): void {
+    const timeoutMs = opts?.timeoutMs ?? 600_000;
+    const pollMs = opts?.pollMs ?? 3000;
+    const onProgress = opts?.onProgress;
+    const progressIntervalMs = opts?.progressIntervalMs ?? 30_000;
+
+    // Cancel any previous monitor
+    const monitorId = ++this._activeMonitorId;
+    const start = Date.now();
+    let phase: 'wait-for-busy' | 'wait-for-idle' = 'wait-for-busy';
+    let lastLog = 0;
+    let lastProgress = 0;
+
+    logger.info({ monitorId }, 'Monitor: starting (phase 1: wait for busy)');
+
+    const poll = async () => {
+      // If a newer monitor was started, abort this one silently
+      if (this._activeMonitorId !== monitorId) {
+        logger.info({ monitorId }, 'Monitor: cancelled (newer monitor started)');
         return;
       }
 
-      if (parsed.type === 'error') {
-        const errorText =
-          extractText(parsed.error) ??
-          extractText(parsed.message) ??
-          'Agent CLI reported an unknown error';
-        await onOutput({ status: 'error', result: null, error: errorText });
-        return;
-      }
+      try {
+        const pane = await this.bridge.capturePaneText();
+        const isIdle = pane.includes(this.idleIndicator);
 
-      if (parsed.type === 'result') {
-        if (parsed.status === 'error') {
-          const errorText =
-            extractText(parsed.error) ??
-            extractText(parsed.message) ??
-            'Agent CLI run failed';
-          await onOutput({ status: 'error', result: null, error: errorText });
+        if (phase === 'wait-for-busy') {
+          if (!isIdle) {
+            // Gemini started processing — move to phase 2
+            phase = 'wait-for-idle';
+            logger.info(
+              { monitorId, elapsed: Date.now() - start },
+              'Monitor: Gemini is busy (phase 2: wait for idle)',
+            );
+          } else if (Date.now() - start > 10_000) {
+            // After 10s, if still idle, Gemini may have processed instantly
+            // (e.g., very fast response) — treat as done
+            logger.info(
+              { monitorId, elapsed: Date.now() - start },
+              'Monitor: still idle after 10s, treating as done',
+            );
+            if (this._activeMonitorId === monitorId) {
+              onIdle(pane);
+            }
+            return;
+          }
+        }
+
+        if (phase === 'wait-for-idle' && isIdle) {
+          // Gemini finished — deliver the response
+          logger.info(
+            { monitorId, elapsed: Date.now() - start, paneLength: pane.length },
+            'Monitor: CLI is idle (done)',
+          );
+          if (this._activeMonitorId === monitorId) {
+            onIdle(pane);
+          }
           return;
         }
 
-        await onOutput({ status: 'success', result: null });
-        return;
-      }
-
-      if (parsed.type === 'message' && parsed.role === 'assistant') {
-        const contentText = extractText(parsed.content);
-        if (contentText) {
-          await onOutput({ status: 'success', result: contentText });
+        // Fire progress callback during Phase 2
+        if (phase === 'wait-for-idle' && onProgress && Date.now() - lastProgress >= progressIntervalMs) {
+          lastProgress = Date.now();
+          try {
+            onProgress(pane, Date.now() - start);
+          } catch (err) {
+            logger.warn({ err, monitorId }, 'onProgress callback error');
+          }
         }
-        return;
-      }
 
-      const responseText = extractText(parsed.response);
-      if (responseText) {
-        await onOutput({ status: 'success', result: responseText });
+        // Timeout check
+        if (Date.now() - start >= timeoutMs) {
+          logger.warn(
+            { monitorId, elapsed: Date.now() - start, phase },
+            'Monitor: timed out',
+          );
+          if (this._activeMonitorId === monitorId) {
+            onIdle(pane);
+          }
+          return;
+        }
+
+        // Progress logging every 30s
+        if (Date.now() - lastLog > 30_000) {
+          logger.info(
+            { monitorId, elapsed: Date.now() - start, phase, paneLength: pane.length },
+            'Monitor: still waiting...',
+          );
+          lastLog = Date.now();
+        }
+
+        // Schedule next poll
+        setTimeout(() => {
+          poll().catch((err) => {
+            logger.error({ err, monitorId }, 'Monitor poll error');
+            if (this._activeMonitorId === monitorId) {
+              onIdle(`Error: ${err instanceof Error ? err.message : 'Unknown error'}`);
+            }
+          });
+        }, pollMs);
+      } catch (err) {
+        logger.error({ err, monitorId }, 'Monitor poll error');
+        if (this._activeMonitorId === monitorId) {
+          onIdle(`Error: ${err instanceof Error ? (err as Error).message : 'Unknown error'}`);
+        }
       }
     };
 
-    const processChunk = async (data: string): Promise<void> => {
-      bufferedChunk += data;
-      const lines = bufferedChunk.split('\n');
-      bufferedChunk = lines.pop() ?? '';
-
-      for (const rawLine of lines) {
-        const line = rawLine.trim();
-        if (!line) continue;
-
-        const parsed = tryParseJson(line);
-        if (parsed) {
-          await emitMappedOutput(parsed);
-        }
+    // Start first poll immediately
+    poll().catch((err) => {
+      logger.error({ err, monitorId }, 'Monitor start error');
+      if (this._activeMonitorId === monitorId) {
+        onIdle(`Error: ${err instanceof Error ? err.message : 'Unknown error'}`);
       }
-
-      const maybeWholeLine = bufferedChunk.trim();
-      if (!maybeWholeLine) return;
-      const parsed = tryParseJson(maybeWholeLine);
-      if (parsed) {
-        bufferedChunk = '';
-        await emitMappedOutput(parsed);
-      }
-    };
-
-    const bridge = new TmuxBridge(group.folder, (data) => {
-      outputQueue = outputQueue
-        .then(() => processChunk(data))
-        .catch((err) => {
-          logger.warn({ err }, 'Failed to process executor output stream');
-        });
-      return outputQueue;
     });
+  }
 
-    const sessionExists = await bridge.hasSession();
-
-    if (!sessionExists) {
-      await bridge.createSession(workspacePath);
-    }
-
-    bridge.startTailing();
-
-    // Write prompt to a temp file to avoid bash escaping issues
-    const stamp = `${Date.now()}-${process.pid}`;
-    const promptFile = path.join(workspacePath, `.prompt-${stamp}.txt`);
-    fs.writeFileSync(promptFile, prompt);
-
-    // Build exports for secrets
-    const exportsArray = Object.entries(secrets).map(
-      ([k, v]) => `export ${k}=${shellEscapeSingleQuoted(v as string)}`,
-    );
-    const exportsCmd = exportsArray.join('\n');
-
-    const cliArgs = [
-      '-p',
-      '"$(cat \"$PROMPT_FILE\")"',
-      '-y',
-      '-o',
-      'stream-json',
-    ];
-    // Only pass --resume when we have a previously captured session ID.
-    // On first run, sessionId will be undefined; the init event emits the
-    // new session ID which the caller persists for subsequent runs.
-    if (sessionId) {
-      cliArgs.push('--resume', shellEscapeSingleQuoted(sessionId));
-    }
-
-    const cliCommand = codingCli || 'gemini';
-
-    const runScript = path.join(workspacePath, `.run-${stamp}.sh`);
-    const scriptContent = `#!/bin/bash
-set -euo pipefail
-cd ${shellEscapeSingleQuoted(workspacePath)}
-PROMPT_FILE=${shellEscapeSingleQuoted(promptFile)}
-OUTPUT_FILE=${shellEscapeSingleQuoted(bridge.outputPath)}
-cleanup() {
-  rm -f -- "$PROMPT_FILE" "$0"
-}
-trap cleanup EXIT
-${exportsCmd}
-set +e
-${cliCommand} ${cliArgs.join(' ')} 2>&1 | tee -a "$OUTPUT_FILE"
-CLI_EXIT_CODE=\${PIPESTATUS[0]}
-set -e
-if [ "$CLI_EXIT_CODE" -ne 0 ]; then
-  printf '\n{"type":"error","error":"Agent CLI exited with code %s"}\n' "$CLI_EXIT_CODE" | tee -a "$OUTPUT_FILE"
-  exit "$CLI_EXIT_CODE"
-fi
-`;
-    fs.writeFileSync(runScript, scriptContent, { mode: 0o700 });
-
-    try {
-      await bridge.sendKeys(`bash ${shellEscapeSingleQuoted(runScript)}`);
-      logger.info(
-        { sessionId: `tc-${group.folder}`, script: runScript },
-        'Command sent to tmux session',
-      );
-      return 'Dispatched instruction to the workspace agent.';
-    } catch (err: any) {
-      logger.error({ err }, 'Failed to send command to tmux');
-      // Clean up temp files
-      try {
-        fs.unlinkSync(promptFile);
-      } catch {
-        /* ignore */
-      }
-      try {
-        fs.unlinkSync(runScript);
-      } catch {
-        /* ignore */
-      }
-      return `Error dispatching to workspace agent: ${err.message}`;
-    }
+  async killSession(): Promise<void> {
+    await this.bridge.killSession();
   }
 }

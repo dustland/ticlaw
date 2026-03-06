@@ -26,7 +26,7 @@ export function readSecrets(): Record<string, string> {
     if (secrets.TC_MODEL) {
       secrets.ANTHROPIC_MODEL = secrets.TC_MODEL;
     } else if (!secrets.ANTHROPIC_MODEL) {
-      secrets.ANTHROPIC_MODEL = 'anthropic/claude-3.5-sonnet';
+      secrets.ANTHROPIC_MODEL = 'anthropic/claude-sonnet-4.6';
     }
   } else if (secrets.TC_MODEL && !secrets.ANTHROPIC_MODEL) {
     secrets.ANTHROPIC_MODEL = secrets.TC_MODEL;
@@ -35,53 +35,112 @@ export function readSecrets(): Record<string, string> {
   return secrets;
 }
 
-export const buildExecutorTool = (
+/**
+ * Callback that fires when Gemini becomes idle after a prompt is sent.
+ * The agent layer provides this so we can deliver results asynchronously.
+ */
+export type OnIdleCallback = (screen: string) => void;
+export type OnProgressCallback = (screen: string, elapsedMs: number) => void;
+
+export const buildSessionTools = (
   group: RegisteredProject,
   workspacePath: string,
   chatJid: string,
   _isMain: boolean,
-  sessionId?: string,
+  _sessionId?: string,
   codingCli?: string,
-  onOutput?: (output: ContainerOutput) => Promise<void> | void,
+  _onOutput?: (output: ContainerOutput) => Promise<void> | void,
+  onIdleCallback?: OnIdleCallback,
+  onProgressCallback?: OnProgressCallback,
 ) => {
   const executor = new Executor({
     group,
     workspacePath,
-    sessionId,
     codingCli,
-    onOutput,
   });
 
-  return tool({
+  const captureSessionTool = tool({
     description:
-      'Runs the AI coding agent inside a tmux session for the current workspace. ' +
-      'Use this when the user asks you to perform a coding task, fix a bug, review a PR, ' +
-      'change the architecture, or explore the codebase. Provide the precise prompt to instruct ' +
-      'the agent on what to do. DO NOT attempt to write or edit code yourself. ' +
-      'ALWAYS delegate codebase tasks to this tool.',
+      'Capture the terminal screen of the workspace agent session. ' +
+      'Set waitForIdle=true to wait until the agent finishes processing (blocking). ' +
+      'Set waitSeconds to add a fixed delay before capturing. ' +
+      'Returns the raw terminal screen content.',
     inputSchema: z.object({
-      prompt: z
-        .string()
+      waitForIdle: z
+        .boolean()
+        .optional()
         .describe(
-          'The prompt to send to the workspace agent (e.g., "Fix issue #123").',
+          'If true, polls until the CLI is idle. Use for quick checks where you need the result immediately.',
         ),
+      waitSeconds: z
+        .number()
+        .optional()
+        .describe('Seconds to wait before capturing.'),
     }),
-    execute: async ({ prompt }) => {
-      logger.info(
-        { chatJid, prompt: prompt.slice(0, 100) },
-        'executorTool called',
-      );
+    execute: async ({ waitForIdle, waitSeconds }) => {
       try {
-        const result = await executor.executePrompt(prompt);
-        logger.info({ chatJid, result }, 'executorTool completed');
-        return result;
+        if (waitForIdle) {
+          logger.info({ chatJid }, 'captureSession: waiting for idle');
+          const screen = await executor.waitForIdle();
+          logger.info({ chatJid, screenLength: screen.length }, 'captureSession: idle');
+          return screen;
+        }
+
+        if (waitSeconds && waitSeconds > 0) {
+          logger.info({ chatJid, waitSeconds }, 'captureSession: waiting');
+          await new Promise((r) => setTimeout(r, waitSeconds * 1000));
+        }
+
+        logger.info({ chatJid }, 'captureSession: capturing');
+        const screen = await executor.capture();
+        logger.info({ chatJid, screenLength: screen.length }, 'captureSession: done');
+        return screen;
       } catch (err: unknown) {
-        const message =
-          err instanceof Error ? err.message : 'Unknown executor error';
-        const stack = err instanceof Error ? err.stack : undefined;
-        logger.error({ chatJid, err: message, stack }, 'executorTool failed');
+        const message = err instanceof Error ? err.message : 'Unknown error';
+        logger.error({ chatJid, err: message }, 'captureSession failed');
         return `Error: ${message}`;
       }
     },
   });
+
+  const sendToSessionTool = tool({
+    description:
+      'Send text to the workspace agent session (types text + Enter). ' +
+      'After sending, a background monitor automatically watches for the agent to finish ' +
+      'and will deliver the result to Discord asynchronously. ' +
+      'You do NOT need to capture the result yourself — just send and tell the user the task is underway.',
+    inputSchema: z.object({
+      text: z
+        .string()
+        .describe('The natural language prompt to send to Gemini.'),
+    }),
+    execute: async ({ text }) => {
+      logger.info({ chatJid, text: text.slice(0, 100) }, 'sendToSession called');
+      try {
+        await executor.send(text);
+
+        // Start background idle monitor
+        if (onIdleCallback) {
+          logger.info({ chatJid }, 'Starting background idle monitor');
+          executor.monitorForIdle((screen) => {
+            logger.info(
+              { chatJid, screenLength: screen.length },
+              'Background monitor: idle detected, firing callback',
+            );
+            onIdleCallback(screen);
+          }, {
+            onProgress: onProgressCallback,
+          });
+        }
+
+        return 'Sent. A background monitor is watching the agent and will deliver the result to Discord automatically when done.';
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : 'Unknown error';
+        logger.error({ chatJid, err: message }, 'sendToSession failed');
+        return `Error: ${message}`;
+      }
+    },
+  });
+
+  return { captureSessionTool, sendToSessionTool };
 };

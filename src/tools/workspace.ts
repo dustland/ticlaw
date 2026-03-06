@@ -37,7 +37,7 @@ export const buildWorkspaceTool = (
       try {
         const parts = repoFullName.split('/');
         if (parts.length !== 2) {
-          throw new Error('Repository name must be in the format owner/repo');
+          return `ERROR: Repository name must be in the format "owner/repo". Got: "${repoFullName}". Do NOT retry.`;
         }
         const [owner, repo] = parts;
         const folderName = `${owner}-${repo}`;
@@ -46,39 +46,23 @@ export const buildWorkspaceTool = (
         if (operation === 'delete') {
           if (fs.existsSync(cloneDir)) {
             fs.rmSync(cloneDir, { recursive: true, force: true });
-            await sendFn(
-              chatJid,
-              `🗑️ Workspace **${repoFullName}** has been deleted from disk.`,
-            );
             return `Successfully deleted workspace for ${repoFullName}.`;
           } else {
-            return `Workspace for ${repoFullName} does not exist.`;
+            return `Workspace for ${repoFullName} does not exist on disk.`;
           }
         }
 
         if (operation === 'update') {
           if (fs.existsSync(cloneDir)) {
-            await sendFn(
-              chatJid,
-              `🔄 Updating workspace for **${repoFullName}**...`,
-            );
             execSync('git pull', { cwd: cloneDir, timeout: 60000 });
-            await sendFn(
-              chatJid,
-              `✅ Workspace **${repoFullName}** is now up to date.`,
-            );
-            return `Successfully updated workspace for ${repoFullName}.`;
+            return `Successfully updated workspace for ${repoFullName} (git pull complete).`;
           } else {
-            return `Workspace for ${repoFullName} does not exist. You must set it up first.`;
+            return `ERROR: Workspace for ${repoFullName} does not exist. Set it up first.`;
           }
         }
 
         if (operation === 'setup') {
           if (!fs.existsSync(cloneDir)) {
-            await sendFn(
-              chatJid,
-              `🦀 Setting up workspace for **${repoFullName}**...`,
-            );
             fs.mkdirSync(path.dirname(cloneDir), { recursive: true });
             execSync(
               `git clone --branch main --single-branch https://github.com/${repoFullName}.git ${cloneDir}`,
@@ -113,14 +97,14 @@ export const buildWorkspaceTool = (
             };
             registerProjectFn(newJid, newGroup);
 
-            await sendFn(
-              chatJid,
-              `✅ Workspace ready! Created <#${newJid.replace('dc:', '')}> for **${repoFullName}**`,
-            );
+            // Send a welcome message to the new channel
             await sendFn(
               newJid,
               `🦀 Workspace initialized for **${repoFullName}**\nI'm listening here — no need to @mention me.`,
             );
+
+            const channelId = newJid.replace('dc:', '');
+            return `Successfully set up workspace for ${repoFullName}. Created a dedicated Discord channel (ID: ${channelId}). Tell the user to check the new channel <#${channelId}>.`;
           } else {
             const group = registeredProjects[chatJid];
             if (group) {
@@ -128,20 +112,27 @@ export const buildWorkspaceTool = (
               group.name = repoFullName;
               registerProjectFn(chatJid, group);
             }
-            await sendFn(chatJid, `✅ Workspace ready: \`${repoFullName}\``);
+            return `Successfully set up workspace for ${repoFullName} in the current channel.`;
           }
-          return `Successfully set up the workspace for ${repoFullName}.`;
         }
 
-        return `Unsupported operation: ${operation}`;
+        return `ERROR: Unsupported operation: ${operation}`;
       } catch (err: unknown) {
-        const message =
+        const rawMsg =
           err instanceof Error ? err.message : 'Unknown workspace error';
-        logger.error({ err: message }, 'Workspace setup failed');
-        await sendFn(
-          chatJid,
-          `⚠️ Workspace operation failed for ${repoFullName}: ${message}`,
-        );
+        logger.error({ err: rawMsg }, 'Workspace setup failed');
+
+        // Extract the human-readable part from git errors
+        let reason = rawMsg;
+        if (rawMsg.includes('Repository not found')) {
+          reason = `Repository "https://github.com/${repoFullName}" not found. It may not exist or may be private.`;
+        } else if (rawMsg.includes('Could not resolve host')) {
+          reason = 'Network error — could not reach GitHub.';
+        } else if (rawMsg.includes('timeout')) {
+          reason = 'Operation timed out. GitHub may be slow or unreachable.';
+        }
+
+        return `ERROR: ${reason} Do NOT retry.`;
       }
     },
   });
