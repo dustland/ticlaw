@@ -256,7 +256,7 @@ export class DiscordChannel implements Channel {
       });
 
       logger.info(
-        { chatJid, chatName, sender: senderName },
+        { chatJid, chatName, sender: senderName, content },
         'Discord message stored',
       );
     });

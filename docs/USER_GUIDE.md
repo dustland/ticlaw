@@ -1,4 +1,4 @@
-# 🦀 TiClaw (雪蟹) User Guide
+# 🦀 TiClaw User Guide
 
 Welcome to TiClaw, your distributed AI R&D engine. This guide explains how to use the system to automate your development workflows via Discord.
 

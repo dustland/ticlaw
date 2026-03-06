@@ -1,4 +1,4 @@
-# TiClaw (雪蟹) Architecture Guide
+# TiClaw Architecture Guide
 
 This document outlines the architectural decisions that differentiate TiClaw from its parent project, NanoClaw.
 

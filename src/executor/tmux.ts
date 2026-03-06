@@ -1,11 +1,9 @@
-import { spawn, execSync, ChildProcess } from 'child_process';
-import fs from 'fs';
-import os from 'os';
-import path from 'path';
+import { spawn, execSync } from 'child_process';
 import { logger } from '../core/logger.js';
+import { readEnvFile } from '../core/env.js';
 
 function shellEscapeSingleQuoted(value: string): string {
-  return `'${value.replace(/'/g, `'"'"'`)}'`;
+  return `'${value.replace(/'/g, `'\"'\"'`)}'`;
 }
 
 async function runTmux(args: string[]): Promise<void> {
@@ -36,44 +34,98 @@ async function runTmuxAllowCode(args: string[]): Promise<number> {
   });
 }
 
+/**
+ * Capture the visible tmux pane content.
+ * For TUI apps that use alternate screen buffers, this captures the
+ * active screen — not the shell scrollback history.
+ */
+async function runTmuxCapture(sessionId: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    // -S - captures from the very start of scrollback history
+    const tmux = spawn('tmux', ['capture-pane', '-pt', sessionId, '-S', '-']);
+    let stdout = '';
+    tmux.stdout.on('data', (data: Buffer) => {
+      stdout += data.toString();
+    });
+    tmux.on('close', (code) => {
+      if (code === 0) {
+        resolve(stdout);
+      } else {
+        reject(new Error(`capture-pane exit code ${code}`));
+      }
+    });
+    tmux.on('error', reject);
+  });
+}
+
 export class TmuxBridge {
   private sessionId: string;
-  private onData: (data: string) => void | Promise<void>;
-  private tailProc: ChildProcess | null = null;
-  private outputFile: string;
 
-  constructor(
-    sessionId: string,
-    onData: (data: string) => void | Promise<void>,
-  ) {
+  constructor(sessionId: string) {
     this.sessionId = `tc-${sessionId}`;
-    this.onData = onData;
-    this.outputFile = path.join(os.tmpdir(), `ticlaw-${this.sessionId}.log`);
   }
 
-  async createSession(cwd: string): Promise<void> {
-    // Check if session already exists — reuse it
+  /**
+   * Create a new tmux session and launch `gemini -y` (interactive, YOLO mode).
+   * If the session already exists, reuse it (but does NOT launch gemini —
+   * use launchGemini() separately if needed).
+   */
+  async createSession(cwd: string, codingCli?: string): Promise<void> {
     const exists = await this.hasSession();
     if (exists) {
       logger.info(
         { sessionId: this.sessionId },
         'Reusing existing tmux session',
       );
-      this.startTailing();
       return;
     }
 
     await runTmux(['new-session', '-d', '-s', this.sessionId, '-c', cwd]);
+    // Set generous scrollback so capture-pane can retrieve content well beyond the viewport
+    await runTmux([
+      'set-option',
+      '-t',
+      this.sessionId,
+      'history-limit',
+      '10000',
+    ]);
     logger.info({ sessionId: this.sessionId }, 'Tmux session created');
-    await this.injectEnv();
+
+    await this.launchGemini(codingCli);
   }
 
   /**
-   * Inject key env vars into the tmux session's running shell.
-   * Uses sendKeys with export to ensure the shell actually picks them up
-   * (tmux set-environment only affects NEW panes, not the current shell).
+   * Launch Gemini in the existing tmux session.
+   * Injects env vars first, then starts the CLI.
    */
-  private async injectEnv(): Promise<void> {
+  async launchGemini(codingCli?: string): Promise<void> {
+    const envExports = this.buildEnvExports();
+
+    // Inject env vars before launching gemini
+    if (envExports.length > 0) {
+      await this.sendRawKeys(`export ${envExports.join(' ')}`);
+      await this.sendRawKeys('Enter');
+      await new Promise((r) => setTimeout(r, 300));
+    }
+
+    // Launch gemini in interactive mode — always ensure -y (YOLO) flag is present
+    let cli = codingCli || 'gemini -y';
+    if (!cli.includes('-y') && !cli.includes('--yolo')) {
+      cli = `${cli} -y`;
+    }
+    await this.sendRawKeys(cli);
+    await this.sendRawKeys('Enter');
+
+    logger.info(
+      { sessionId: this.sessionId, cli },
+      'Gemini launched in interactive mode',
+    );
+  }
+
+  /**
+   * Build env var exports for proxy, API keys, etc.
+   */
+  private buildEnvExports(): string[] {
     const exports: string[] = [];
 
     const passthrough = [
@@ -90,8 +142,6 @@ export class TmuxBridge {
       'GITHUB_MCP_PAT',
     ];
 
-    // Import readEnvFile dynamically or statically to read from config.yaml
-    const { readEnvFile } = await import('../core/env.js');
     const yamlEnv = readEnvFile(passthrough);
 
     for (const key of passthrough) {
@@ -116,38 +166,14 @@ export class TmuxBridge {
       }
     }
 
-    if (exports.length > 0) {
-      await this.sendKeys(`export ${exports.join(' ')}`);
-    }
+    return exports;
   }
 
   /**
-   * Start tailing the output file. Only captures agent-runner stdout,
-   * not shell prompts or ANSI codes.
+   * Capture the current visible pane content from the tmux session.
    */
-  startTailing(): void {
-    if (this.tailProc) return; // already tailing
-
-    logger.info(
-      { sessionId: this.sessionId, outputFile: this.outputFile },
-      'Tailing agent output file',
-    );
-
-    // Ensure file exists
-    fs.writeFileSync(this.outputFile, '', { flag: 'a' });
-
-    this.tailProc = spawn('tail', ['-n', '0', '-F', this.outputFile]);
-    this.tailProc.stdout?.on('data', (data: Buffer) => {
-      Promise.resolve(this.onData(data.toString())).catch((err) => {
-        logger.warn({ err }, 'Tmux output handler failed');
-      });
-    });
-    this.tailProc.on('error', (err) => {
-      logger.warn({ err, sessionId: this.sessionId }, 'Failed to tail output');
-    });
-    this.tailProc.on('close', () => {
-      this.tailProc = null;
-    });
+  async capturePaneText(): Promise<string> {
+    return runTmuxCapture(this.sessionId);
   }
 
   async hasSession(): Promise<boolean> {
@@ -156,13 +182,6 @@ export class TmuxBridge {
   }
 
   async killSession(): Promise<void> {
-    this.tailProc?.kill();
-    this.tailProc = null;
-    try {
-      fs.unlinkSync(this.outputFile);
-    } catch {
-      /* ignore */
-    }
     const code = await runTmuxAllowCode(['kill-session', '-t', this.sessionId]);
     if (code !== 0) {
       logger.debug(
@@ -173,15 +192,26 @@ export class TmuxBridge {
   }
 
   /**
-   * Send a command to the tmux session, redirecting stdout to the output file.
-   * To capture output, append ` >> {outputFile} 2>&1` to the command.
+   * Send text to the tmux session. For TUI apps like Gemini CLI,
+   * send the prompt text first, then call sendEnter() separately.
    */
-  async sendKeys(keys: string): Promise<void> {
-    await runTmux(['send-keys', '-t', this.sessionId, keys, 'C-m']);
+  async sendRawKeys(keys: string): Promise<void> {
+    await runTmux(['send-keys', '-t', this.sessionId, keys]);
   }
 
-  /** Get the output file path so callers can redirect command output to it. */
-  get outputPath(): string {
-    return this.outputFile;
+  /**
+   * Send text followed by Enter to the tmux session.
+   * Convenience method for submitting prompts to the Gemini TUI.
+   */
+  async sendPrompt(text: string): Promise<void> {
+    await this.sendRawKeys(text);
+    // Small delay to ensure TUI registers the text before Enter
+    await new Promise((r) => setTimeout(r, 100));
+    await this.sendRawKeys('Enter');
+  }
+
+  /** Get the tmux session ID */
+  get session(): string {
+    return this.sessionId;
   }
 }

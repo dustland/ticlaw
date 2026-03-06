@@ -116,7 +116,9 @@ export async function runAgentOrchestrator(opts: {
     } catch (err) {
       logger.error({ err, chatJid: opts.chatJid }, 'Idle callback failed');
       if (opts.onReply) {
-        await opts.onReply('🦀 Task completed. Check the workspace agent for details.');
+        await opts.onReply(
+          '🦀 Task completed. Check the workspace agent for details.',
+        );
       }
     }
   };

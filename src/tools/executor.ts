@@ -82,7 +82,10 @@ export const buildSessionTools = (
         if (waitForIdle) {
           logger.info({ chatJid }, 'captureSession: waiting for idle');
           const screen = await executor.waitForIdle();
-          logger.info({ chatJid, screenLength: screen.length }, 'captureSession: idle');
+          logger.info(
+            { chatJid, screenLength: screen.length },
+            'captureSession: idle',
+          );
           return screen;
         }
 
@@ -93,7 +96,10 @@ export const buildSessionTools = (
 
         logger.info({ chatJid }, 'captureSession: capturing');
         const screen = await executor.capture();
-        logger.info({ chatJid, screenLength: screen.length }, 'captureSession: done');
+        logger.info(
+          { chatJid, screenLength: screen.length },
+          'captureSession: done',
+        );
         return screen;
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : 'Unknown error';
@@ -115,22 +121,28 @@ export const buildSessionTools = (
         .describe('The natural language prompt to send to Gemini.'),
     }),
     execute: async ({ text }) => {
-      logger.info({ chatJid, text: text.slice(0, 100) }, 'sendToSession called');
+      logger.info(
+        { chatJid, text: text.slice(0, 100) },
+        'sendToSession called',
+      );
       try {
         await executor.send(text);
 
         // Start background idle monitor
         if (onIdleCallback) {
           logger.info({ chatJid }, 'Starting background idle monitor');
-          executor.monitorForIdle((screen) => {
-            logger.info(
-              { chatJid, screenLength: screen.length },
-              'Background monitor: idle detected, firing callback',
-            );
-            onIdleCallback(screen);
-          }, {
-            onProgress: onProgressCallback,
-          });
+          executor.monitorForIdle(
+            (screen) => {
+              logger.info(
+                { chatJid, screenLength: screen.length },
+                'Background monitor: idle detected, firing callback',
+              );
+              onIdleCallback(screen);
+            },
+            {
+              onProgress: onProgressCallback,
+            },
+          );
         }
 
         return 'Sent. A background monitor is watching the agent and will deliver the result to Discord automatically when done.';

@@ -154,7 +154,10 @@ export class Executor {
     const poll = async () => {
       // If a newer monitor was started, abort this one silently
       if (this._activeMonitorId !== monitorId) {
-        logger.info({ monitorId }, 'Monitor: cancelled (newer monitor started)');
+        logger.info(
+          { monitorId },
+          'Monitor: cancelled (newer monitor started)',
+        );
         return;
       }
 
@@ -197,7 +200,11 @@ export class Executor {
         }
 
         // Fire progress callback during Phase 2
-        if (phase === 'wait-for-idle' && onProgress && Date.now() - lastProgress >= progressIntervalMs) {
+        if (
+          phase === 'wait-for-idle' &&
+          onProgress &&
+          Date.now() - lastProgress >= progressIntervalMs
+        ) {
           lastProgress = Date.now();
           try {
             onProgress(pane, Date.now() - start);
@@ -221,7 +228,12 @@ export class Executor {
         // Progress logging every 30s
         if (Date.now() - lastLog > 30_000) {
           logger.info(
-            { monitorId, elapsed: Date.now() - start, phase, paneLength: pane.length },
+            {
+              monitorId,
+              elapsed: Date.now() - start,
+              phase,
+              paneLength: pane.length,
+            },
             'Monitor: still waiting...',
           );
           lastLog = Date.now();
@@ -232,14 +244,18 @@ export class Executor {
           poll().catch((err) => {
             logger.error({ err, monitorId }, 'Monitor poll error');
             if (this._activeMonitorId === monitorId) {
-              onIdle(`Error: ${err instanceof Error ? err.message : 'Unknown error'}`);
+              onIdle(
+                `Error: ${err instanceof Error ? err.message : 'Unknown error'}`,
+              );
             }
           });
         }, pollMs);
       } catch (err) {
         logger.error({ err, monitorId }, 'Monitor poll error');
         if (this._activeMonitorId === monitorId) {
-          onIdle(`Error: ${err instanceof Error ? (err as Error).message : 'Unknown error'}`);
+          onIdle(
+            `Error: ${err instanceof Error ? (err as Error).message : 'Unknown error'}`,
+          );
         }
       }
     };
@@ -248,7 +264,9 @@ export class Executor {
     poll().catch((err) => {
       logger.error({ err, monitorId }, 'Monitor start error');
       if (this._activeMonitorId === monitorId) {
-        onIdle(`Error: ${err instanceof Error ? err.message : 'Unknown error'}`);
+        onIdle(
+          `Error: ${err instanceof Error ? err.message : 'Unknown error'}`,
+        );
       }
     });
   }

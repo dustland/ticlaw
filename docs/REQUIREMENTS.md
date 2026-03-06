@@ -1,4 +1,4 @@
-# TiClaw (雪蟹) Requirements & Philosophy
+# TiClaw Requirements & Philosophy
 
 This document outlines the foundational requirements and engineering principles for TiClaw — a distributed AI R&D engine designed as a black-box core with a plugin ecosystem.
 

@@ -88,14 +88,14 @@ Yes! Set `TC_CODING_CLI="claude"` or `TC_CODING_CLI="gemini"` in your `.env`.
 
 **Can I use third-party LLM providers?**
 
-Yes! TiClaw defaults to **OpenRouter** which provides access to Claude 3.5 Sonnet and other powerful models via an Anthropic-compatible API. You can switch to direct Anthropic or Gemini by updating your `.env` file.
+Yes! TiClaw defaults to **OpenRouter** which provides access to Claude 4.5 Sonnet and other powerful models via an Anthropic-compatible API. You can switch to direct Anthropic or Gemini by updating your `.env` file.
 
 **How do I configure OpenRouter?**
 
 Simply set your key and preferred model in `.env`:
 ```bash
 OPENROUTER_API_KEY="your-openrouter-key"
-TC_MODEL="anthropic/claude-3.5-sonnet"
+TC_MODEL="anthropic/claude-sonnet-4.6"
 ```
 TiClaw automatically handles the routing and provider-specific mapping.
 

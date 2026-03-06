@@ -58,9 +58,9 @@ async function test() {
       workspacePath,
       isMain: false,
       messages: [{ role: 'user', content: '@Shaw what was the last commit?' }],
-      sendFn: async (_jid, _text) => { },
+      sendFn: async (_jid, _text) => {},
       createChannelFn: async () => null,
-      registerProjectFn: () => { },
+      registerProjectFn: () => {},
       isChannelAliveFn: async () => true,
       registeredProjects: {},
       onReply: async (text) => {
@@ -82,7 +82,9 @@ async function test() {
   await asyncDone;
   clearTimeout(timeout);
 
-  console.log('\n=== E2E Test Complete: Both sync and async delivery verified ===\n');
+  console.log(
+    '\n=== E2E Test Complete: Both sync and async delivery verified ===\n',
+  );
   process.exit(0);
 }
 
