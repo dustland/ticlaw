@@ -1,6 +1,6 @@
 import { tool } from 'ai';
 import { z } from 'zod';
-import { execSync } from 'child_process';
+import { spawnSync } from 'child_process';
 import path from 'path';
 import fs from 'fs';
 
@@ -35,6 +35,12 @@ export const buildWorkspaceTool = (
       );
 
       try {
+        if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]*\/[a-zA-Z0-9._-]+$/.test(repoFullName) || repoFullName.includes('..')) {
+          throw new Error(
+            'Invalid repository name. Use "owner/repo" format with only alphanumeric characters, hyphens, underscores, dots, and a single forward slash. Path traversal symbols (..) are not allowed.',
+          );
+        }
+
         const parts = repoFullName.split('/');
         if (parts.length !== 2) {
           throw new Error('Repository name must be in the format owner/repo');
@@ -62,7 +68,14 @@ export const buildWorkspaceTool = (
               chatJid,
               `🔄 Updating workspace for **${repoFullName}**...`,
             );
-            execSync('git pull', { cwd: cloneDir, timeout: 60000 });
+            const result = spawnSync('git', ['pull'], {
+              cwd: cloneDir,
+              timeout: 60000,
+              encoding: 'utf-8',
+            });
+            if (result.error || result.status !== 0) {
+              throw new Error(result.stderr || 'git pull failed');
+            }
             await sendFn(
               chatJid,
               `✅ Workspace **${repoFullName}** is now up to date.`,
@@ -80,10 +93,23 @@ export const buildWorkspaceTool = (
               `🦀 Setting up workspace for **${repoFullName}**...`,
             );
             fs.mkdirSync(path.dirname(cloneDir), { recursive: true });
-            execSync(
-              `git clone --branch main --single-branch https://github.com/${repoFullName}.git ${cloneDir}`,
-              { timeout: 60000 },
+
+            const result = spawnSync(
+              'git',
+              [
+                'clone',
+                '--branch',
+                'main',
+                '--single-branch',
+                `https://github.com/${repoFullName}.git`,
+                cloneDir,
+              ],
+              { timeout: 60000, encoding: 'utf-8' },
             );
+
+            if (result.error || result.status !== 0) {
+              throw new Error(result.stderr || 'git clone failed');
+            }
           }
 
           const existingEntry = Object.entries(registeredProjects).find(
