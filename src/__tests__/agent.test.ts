@@ -6,8 +6,8 @@ import * as ai from 'ai';
 vi.mock('ai', () => ({
   generateText: vi.fn(),
   tool: vi.fn((x) => x),
+  stepCountIs: vi.fn((x) => x),
 }));
-
 vi.mock('@openrouter/ai-sdk-provider', () => ({
   createOpenRouter: vi.fn().mockReturnValue(() => 'mock-model'),
 }));
@@ -68,6 +68,7 @@ describe('Agent Orchestrator', () => {
     vi.mocked(ai.generateText).mockResolvedValueOnce({
       text: 'I have scheduled the requested work via tools.',
       toolCalls: [],
+      steps: [],
     } as any);
 
     const result = await runAgentOrchestrator(dummyOpts);

@@ -1,4 +1,4 @@
-# 🦀 TiClaw (雪蟹)
+# 🦀 TiClaw
 
 <p align="center">
   <img src="assets/ticlaw-logo.png" alt="TiClaw" width="400">
@@ -57,7 +57,7 @@ TiClaw 扩展了 [NanoClaw](https://github.com/qwibitai/nanoclaw) 的设计哲�
 
 - macOS (专为 Mac Mini 优化) 或 Linux
 - Node.js 20+
-- [Gemini CLI](https://github.com/google/gemini-cli) (默认) 或 [Claude Code](https://claude.ai/download)
+- [Gemini CLI](https://github.com/google/gemini) (默认) 或 [Claude Code](https://claude.ai/download)
 - [Discord 机器人 Token](https://discord.com/developers/applications)
 
 ## 架构

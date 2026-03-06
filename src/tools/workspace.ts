@@ -18,7 +18,7 @@ export const buildWorkspaceTool = (
 ) => {
   return tool({
     description: `Manage workspaces for GitHub repositories. You can setup (clone), update (git pull), or delete a workspace.`,
-    parameters: z.object({
+    inputSchema: z.object({
       operation: z
         .enum(['setup', 'update', 'delete'])
         .describe('The operation to perform on the workspace.'),
@@ -134,13 +134,15 @@ export const buildWorkspaceTool = (
         }
 
         return `Unsupported operation: ${operation}`;
-      } catch (err: any) {
-        logger.error({ err: err.message }, 'Workspace setup failed');
+      } catch (err: unknown) {
+        const message =
+          err instanceof Error ? err.message : 'Unknown workspace error';
+        logger.error({ err: message }, 'Workspace setup failed');
         await sendFn(
           chatJid,
-          `⚠️ Workspace operation failed for ${repoFullName}: ${err.message}`,
+          `⚠️ Workspace operation failed for ${repoFullName}: ${message}`,
         );
       }
     },
-  } as any);
+  });
 };

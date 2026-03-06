@@ -64,7 +64,7 @@ export async function bootstrap(): Promise<void> {
     console.log(`    ${found ? '✅' : '❌'} ${name}`);
   }
 
-  const primaryCli = clis['gemini'] ? 'gemini-cli' : clis['claude'] ? 'claude' : null;
+  const primaryCli = clis['gemini'] ? 'gemini' : clis['claude'] ? 'claude' : null;
   if (!primaryCli) {
     console.log(
       '\n  ⚠️  No coding CLI detected. Install Gemini CLI:',
@@ -89,7 +89,7 @@ export async function bootstrap(): Promise<void> {
 
   // 4. Build config object
   const config: any = {
-    coding_cli: primaryCli || 'gemini-cli',
+    coding_cli: primaryCli || 'gemini',
     assistant_name: assistantName,
   };
 
@@ -186,7 +186,7 @@ export async function bootstrap(): Promise<void> {
   console.log('\n  🦀 TiClaw is ready!');
   console.log(`  Config: ${CONFIG_PATH}`);
   console.log(`  Data: ${dataDir}`);
-  console.log(`  Primary CLI: ${primaryCli || 'gemini-cli'}`);
+  console.log(`  Primary CLI: ${primaryCli || 'gemini'}`);
   if (discordToken) console.log('  Discord: enabled');
   console.log('\n  Next steps:');
   console.log('    • Send a message in your Discord channel to test');

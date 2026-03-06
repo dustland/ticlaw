@@ -1,7 +1,7 @@
-import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
+import { describe, expect, it, beforeEach, afterEach } from 'vitest';
 import { TmuxBridge } from './tmux.js';
 import fs from 'fs';
-import path from 'path';
+import { execSync } from 'child_process';
 
 describe('TmuxBridge Feature', () => {
   const sessionId = `test-bridge-${Date.now()}`;
@@ -52,5 +52,52 @@ describe('TmuxBridge Feature', () => {
 
     // Output file should be deleted by killSession
     expect(fs.existsSync(bridge.outputPath)).toBe(false);
+  });
+
+  it('tails only newly appended lines for an existing output file', async () => {
+    const staleMessage = `stale-${Date.now()}`;
+    fs.writeFileSync(bridge.outputPath, `${staleMessage}\n`);
+
+    bridge.startTailing();
+    await new Promise((r) => setTimeout(r, 700));
+
+    const initialRead = receivedData.join('\n');
+    expect(initialRead).not.toContain(staleMessage);
+
+    const freshMessage = `fresh-${Date.now()}`;
+    fs.appendFileSync(bridge.outputPath, `${freshMessage}\n`);
+
+    const startedAt = Date.now();
+    while (Date.now() - startedAt < 3000) {
+      if (receivedData.join('\n').includes(freshMessage)) break;
+      await new Promise((r) => setTimeout(r, 100));
+    }
+
+    const finalRead = receivedData.join('\n');
+    expect(finalRead).toContain(freshMessage);
+  });
+
+  it('can mirror live output to both tmux screen and IPC tail stream', async () => {
+    await bridge.createSession(testDir);
+    bridge.startTailing();
+    await new Promise((r) => setTimeout(r, 700));
+
+    const marker = `screen-and-ipc-${Date.now()}`;
+    await bridge.sendKeys(
+      `echo "${marker}" 2>&1 | tee -a ${bridge.outputPath}`,
+    );
+
+    const startedAt = Date.now();
+    while (Date.now() - startedAt < 3000) {
+      if (receivedData.join('\n').includes(marker)) break;
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    expect(receivedData.join('\n')).toContain(marker);
+
+    const paneText = execSync(`tmux capture-pane -pt tc-${sessionId}`)
+      .toString()
+      .trim();
+    const escaped = marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    expect(paneText).toMatch(new RegExp(`^\\s*${escaped}\\s*$`, 'm'));
   });
 });

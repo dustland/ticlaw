@@ -69,7 +69,7 @@ The engine extends through **skills** — self-contained packages that combine a
 | Extension Point | Mechanism | Example |
 |----------------|-----------|---------|
 | **Channels** | Skill with `Channel` implementation | `skills/add-discord/` — adds Discord connectivity |
-| **CLI Drivers** | Config (`TC_CODING_CLI`) | `TC_CODING_CLI=gemini-cli` switches the agent backend |
+| **CLI Drivers** | Config (`TC_CODING_CLI`) | `TC_CODING_CLI=gemini` switches the agent backend |
 | **MCP Tools** | Standard MCP config | MCP server discovery and tool calling |
 
 Skills are the primary extensibility mechanism. Adding a new channel means creating a skill that provides a `Channel` implementation, handles credential setup, and self-registers at startup.

@@ -261,7 +261,7 @@ Configure authentication in a `.env` file in the project root. The default CLI i
 ```bash
 # Login once with: gemini login
 # No API key needed — uses your Google account
-TC_CODING_CLI=gemini-cli
+TC_CODING_CLI=gemini
 ```
 
 **Claude Code** (requires Anthropic API key or subscription):
@@ -434,7 +434,7 @@ SQLite database at `~/ticlaw/store/messages.db`:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `TC_CODING_CLI` | `gemini-cli` | AI CLI to use (`gemini-cli`, `claude`, `codex`) |
+| `TC_CODING_CLI` | `gemini` | AI CLI to use (`gemini`, `claude`, `codex`) |
 | `ASSISTANT_NAME` | `Andy` | Trigger name and response prefix |
 | `ASSISTANT_HAS_OWN_NUMBER` | `false` | Solo chat mode (no trigger needed) |
 | `TC_GEMINI_API_KEY` | — | Gemini API key for Delta Feed summaries |

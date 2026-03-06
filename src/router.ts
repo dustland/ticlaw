@@ -21,6 +21,28 @@ export function routeOutbound(
   return channel.sendMessage(jid, text, options);
 }
 
+export async function routeSendReturningId(
+  channels: Channel[],
+  jid: string,
+  text: string,
+): Promise<string | null> {
+  const channel = channels.find((c) => c.ownsJid(jid) && c.isConnected());
+  if (!channel || !channel.sendMessageReturningId) return null;
+  return channel.sendMessageReturningId(jid, text);
+}
+
+export async function routeEditMessage(
+  channels: Channel[],
+  jid: string,
+  messageId: string,
+  text: string,
+): Promise<void> {
+  const channel = channels.find((c) => c.ownsJid(jid) && c.isConnected());
+  if (channel && channel.editMessage) {
+    await channel.editMessage(jid, messageId, text);
+  }
+}
+
 export function routeOutboundFile(
   channels: Channel[],
   jid: string,
