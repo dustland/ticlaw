@@ -594,7 +594,7 @@ async function main(): Promise<void> {
         new Promise((r) => setTimeout(r, 10000)),
       ]);
     }
-    for (const ch of channels) await ch.disconnect();
+    await Promise.allSettled(channels.map((ch) => ch.disconnect()));
     messageLoopRunning = false;
     process.exit(0);
   };
