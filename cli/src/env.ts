@@ -9,34 +9,20 @@
 
 import { execSync } from 'child_process';
 import fs from 'fs';
-import os from 'os';
 import path from 'path';
-import readline from 'readline';
 import yaml from 'yaml';
 import type { Command } from 'commander';
+import {
+  prompt,
+  readConfig,
+  TICLAW_HOME,
+  CONFIG_PATH,
+} from './utils.js';
 
-const PROJECT_ROOT = path.resolve(import.meta.dirname, '..', '..');
-const HOME_DIR = process.env.HOME || os.homedir();
-const TICLAW_HOME = path.join(HOME_DIR, 'ticlaw');
 const WORKSPACES_DIR = path.join(TICLAW_HOME, 'workspaces');
 const ENVS_DIR = path.join(TICLAW_HOME, 'envs');
-const CONFIG_PATH = path.join(TICLAW_HOME, 'config.yaml');
 const STORE_DIR = path.join(TICLAW_HOME, 'store');
 const GROUPS_DIR = path.join(TICLAW_HOME, 'groups');
-
-function prompt(question: string, defaultValue?: string): Promise<string> {
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
-  });
-  const suffix = defaultValue ? ` [${defaultValue}]` : '';
-  return new Promise((resolve) => {
-    rl.question(`${question}${suffix}: `, (answer) => {
-      rl.close();
-      resolve(answer.trim() || defaultValue || '');
-    });
-  });
-}
 
 function ghAvailable(): boolean {
   try {
@@ -68,14 +54,6 @@ function searchRepos(query: string): RepoInfo[] {
     );
   } catch {
     return [];
-  }
-}
-
-function readConfig(): any {
-  try {
-    return yaml.parse(fs.readFileSync(CONFIG_PATH, 'utf-8')) || {};
-  } catch {
-    return {};
   }
 }
 

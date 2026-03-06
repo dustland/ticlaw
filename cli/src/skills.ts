@@ -11,8 +11,7 @@ import { execSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import type { Command } from 'commander';
-
-const PROJECT_ROOT = path.resolve(import.meta.dirname, '..', '..');
+import { PROJECT_ROOT } from './utils.js';
 const SKILLS_DIR = path.join(PROJECT_ROOT, 'skills');
 const STATE_PATH = path.join(PROJECT_ROOT, '.ticlaw', 'state.json');
 

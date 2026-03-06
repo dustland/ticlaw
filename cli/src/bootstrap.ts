@@ -12,30 +12,14 @@
 
 import { execSync } from 'child_process';
 import fs from 'fs';
-import os from 'os';
 import path from 'path';
-import readline from 'readline';
 import yaml from 'yaml';
-
-// Resolve project root (cli/ lives one level below root)
-const PROJECT_ROOT = path.resolve(import.meta.dirname, '..', '..');
-const HOME_DIR = process.env.HOME || os.homedir();
-const TICLAW_HOME = path.join(HOME_DIR, 'ticlaw');
-const CONFIG_PATH = path.join(TICLAW_HOME, 'config.yaml');
-
-function prompt(question: string, defaultValue?: string): Promise<string> {
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
-  });
-  const suffix = defaultValue ? ` [${defaultValue}]` : '';
-  return new Promise((resolve) => {
-    rl.question(`${question}${suffix}: `, (answer) => {
-      rl.close();
-      resolve(answer.trim() || defaultValue || '');
-    });
-  });
-}
+import {
+  prompt,
+  PROJECT_ROOT,
+  TICLAW_HOME,
+  CONFIG_PATH,
+} from './utils.js';
 
 function detectCLIs(): Record<string, boolean> {
   const clis: Record<string, boolean> = {};

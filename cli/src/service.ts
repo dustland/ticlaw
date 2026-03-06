@@ -6,14 +6,14 @@
 
 import { execSync } from 'child_process';
 import fs from 'fs';
-import os from 'os';
 import path from 'path';
-import yaml from 'yaml';
-
-const PROJECT_ROOT = path.resolve(import.meta.dirname, '..', '..');
-const HOME_DIR = process.env.HOME || os.homedir();
-const TICLAW_HOME = path.join(HOME_DIR, 'ticlaw');
-const CONFIG_PATH = path.join(TICLAW_HOME, 'config.yaml');
+import {
+  readConfig,
+  PROJECT_ROOT,
+  HOME_DIR,
+  TICLAW_HOME,
+  CONFIG_PATH,
+} from './utils.js';
 
 function getPlatform(): 'macos' | 'linux' | 'unknown' {
   if (process.platform === 'darwin') return 'macos';
@@ -34,14 +34,6 @@ const LAUNCHD_PLIST = path.join(
 
 function getSystemdUnit(): string {
   return 'ticlaw.service';
-}
-
-function readConfig(): any {
-  try {
-    return yaml.parse(fs.readFileSync(CONFIG_PATH, 'utf-8')) || {};
-  } catch {
-    return {};
-  }
 }
 
 // --- Start ---
