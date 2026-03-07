@@ -6,6 +6,7 @@ import * as ai from 'ai';
 vi.mock('ai', () => ({
   generateText: vi.fn(),
   tool: vi.fn((x) => x),
+  stepCountIs: vi.fn(),
 }));
 
 vi.mock('@openrouter/ai-sdk-provider', () => ({
@@ -29,6 +30,10 @@ vi.mock('../logger.js', () => ({
 vi.mock('../tools/executor.js', () => ({
   buildExecutorTool: vi.fn().mockReturnValue({
     execute: vi.fn().mockResolvedValue('Executor called'),
+  }),
+  buildSessionTools: vi.fn().mockReturnValue({
+    captureSessionTool: { execute: vi.fn() },
+    sendToSessionTool: { execute: vi.fn() },
   }),
 }));
 
@@ -65,19 +70,27 @@ describe('Agent Orchestrator', () => {
   });
 
   it('should call generateText with correct model and tools', async () => {
-    vi.mocked(ai.generateText).mockResolvedValueOnce({
+    vi.mocked(ai.generateText).mockResolvedValue({
       text: 'I have scheduled the requested work via tools.',
-      toolCalls: [],
+      steps: [{
+        toolCalls: []
+      }],
     } as any);
 
     const result = await runAgentOrchestrator(dummyOpts);
 
     expect(ai.generateText).toHaveBeenCalled();
-    const callArgs = vi.mocked(ai.generateText).mock.calls[0][0];
 
-    expect((callArgs as any).system).toContain('You are TiClaw');
-    expect((callArgs as any).tools).toHaveProperty('executorTool');
-    expect((callArgs as any).tools).toHaveProperty('workspaceTool');
+    // Find the call that has the system prompt to verify the main agent call
+    const mainCallArgs = vi.mocked(ai.generateText).mock.calls.find(
+      (args) => (args[0] as any).system !== undefined
+    )?.[0];
+
+    expect(mainCallArgs).toBeDefined();
+    expect((mainCallArgs as any).system).toContain('You are TiClaw');
+    expect((mainCallArgs as any).tools).toHaveProperty('workspaceTool');
+    expect((mainCallArgs as any).tools).toHaveProperty('captureSessionTool');
+    expect((mainCallArgs as any).tools).toHaveProperty('sendToSessionTool');
 
     expect(result).toBe('I have scheduled the requested work via tools.');
     expect(dummyOpts.onReply).toHaveBeenCalledWith(
