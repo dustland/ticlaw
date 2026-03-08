@@ -1,6 +1,6 @@
 import { tool } from 'ai';
 import { z } from 'zod';
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
 import path from 'path';
 import fs from 'fs';
 
@@ -39,6 +39,12 @@ export const buildWorkspaceTool = (
         if (parts.length !== 2) {
           return `ERROR: Repository name must be in the format "owner/repo". Got: "${repoFullName}". Do NOT retry.`;
         }
+
+        const repoRegex = /^[a-zA-Z0-9][a-zA-Z0-9._-]*\/[a-zA-Z0-9._-]+$/;
+        if (!repoRegex.test(repoFullName) || repoFullName.includes('..')) {
+          return `ERROR: Invalid repository name format. Must match ${repoRegex} and not contain "..". Got: "${repoFullName}". Do NOT retry.`;
+        }
+
         const [owner, repo] = parts;
         const folderName = `${owner}-${repo}`;
         const cloneDir = path.join(TICLAW_HOME, 'factory', folderName);
@@ -54,7 +60,7 @@ export const buildWorkspaceTool = (
 
         if (operation === 'update') {
           if (fs.existsSync(cloneDir)) {
-            execSync('git pull', { cwd: cloneDir, timeout: 60000 });
+            execFileSync('git', ['pull'], { cwd: cloneDir, timeout: 60000 });
             return `Successfully updated workspace for ${repoFullName} (git pull complete).`;
           } else {
             return `ERROR: Workspace for ${repoFullName} does not exist. Set it up first.`;
@@ -64,8 +70,16 @@ export const buildWorkspaceTool = (
         if (operation === 'setup') {
           if (!fs.existsSync(cloneDir)) {
             fs.mkdirSync(path.dirname(cloneDir), { recursive: true });
-            execSync(
-              `git clone --branch main --single-branch https://github.com/${repoFullName}.git ${cloneDir}`,
+            execFileSync(
+              'git',
+              [
+                'clone',
+                '--branch',
+                'main',
+                '--single-branch',
+                `https://github.com/${repoFullName}.git`,
+                cloneDir,
+              ],
               { timeout: 60000 },
             );
           }
