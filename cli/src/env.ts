@@ -7,7 +7,7 @@
  *   tc env remove <name>    Remove an environment
  */
 
-import { execSync } from 'child_process';
+import { execSync, execFileSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import yaml from 'yaml';
@@ -117,7 +117,18 @@ async function addEnv(name: string): Promise<void> {
     process.exit(1);
   }
 
+  const repoRegex = /^[a-zA-Z0-9][a-zA-Z0-9._-]*\/[a-zA-Z0-9._-]+$/;
+  if (!repoRegex.test(repoFullName) || repoFullName.includes('..')) {
+    console.error(`  ❌ Invalid repo name format. Must match ${repoRegex} and not contain ".."`);
+    process.exit(1);
+  }
+
   const branch = await prompt('  Branch', 'main');
+
+  if (branch.includes('..') || /;|&|\||`|\$|\n/.test(branch)) {
+    console.error(`  ❌ Invalid branch name format.`);
+    process.exit(1);
+  }
 
   // 2. Clone workspace
   const [owner, repo] = repoFullName.split('/');
@@ -129,8 +140,16 @@ async function addEnv(name: string): Promise<void> {
     console.log(`\n  📦 Cloning ${repoFullName}@${branch}...`);
     fs.mkdirSync(path.dirname(workspaceDir), { recursive: true });
     try {
-      execSync(
-        `git clone --branch ${branch} --single-branch https://github.com/${repoFullName}.git ${workspaceDir}`,
+      execFileSync(
+        'git',
+        [
+          'clone',
+          '--branch',
+          branch,
+          '--single-branch',
+          `https://github.com/${repoFullName}.git`,
+          workspaceDir,
+        ],
         { stdio: 'inherit' },
       );
       console.log('  ✅ Cloned successfully');
