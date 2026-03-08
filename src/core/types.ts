@@ -128,3 +128,49 @@ export interface ContainerOutput {
   error?: string;
   newSessionId?: string;
 }
+
+// --- Mind System schemas ---
+
+export type InteractionRole = 'user' | 'assistant' | 'system';
+export type InteractionIntent = 'task' | 'persona' | 'memory' | 'mixed' | 'unknown';
+
+export interface InteractionEvent {
+  id: string;
+  chat_jid: string;
+  channel?: string;
+  role: InteractionRole;
+  content: string;
+  timestamp: string;
+  sender?: string;
+  sender_name?: string;
+  intent?: InteractionIntent;
+  metadata?: Record<string, unknown>;
+}
+
+export type MindLifecycle = 'draft' | 'candidate' | 'locked';
+
+export interface MindPersona {
+  tone?: 'neutral' | 'friendly' | 'playful' | 'professional';
+  verbosity?: 'short' | 'normal' | 'detailed';
+  emoji?: boolean;
+  styleNotes?: string[];
+}
+
+export interface MindState {
+  id: string;
+  version: number;
+  lifecycle: MindLifecycle;
+  persona: MindPersona;
+  memory_summary: string;
+  updated_at: string;
+}
+
+export interface MindPackage {
+  id: string;
+  version: number;
+  lifecycle: MindLifecycle;
+  persona: MindPersona;
+  memory_summary: string;
+  changelog: string;
+  created_at: string;
+}

@@ -6,6 +6,10 @@ import { ASSISTANT_NAME, DATA_DIR, STORE_DIR } from './config.js';
 import { isValidGroupFolder } from '../executor/group-folder.js';
 import { logger } from './logger.js';
 import {
+  InteractionEvent,
+  MindLifecycle,
+  MindPackage,
+  MindState,
   NewMessage,
   RegisteredProject,
   ScheduledTask,
@@ -81,6 +85,40 @@ function createSchema(database: Database.Database): void {
       added_at TEXT NOT NULL,
       container_config TEXT,
       requires_trigger INTEGER DEFAULT 1
+    );
+
+    CREATE TABLE IF NOT EXISTS interaction_events (
+      id TEXT PRIMARY KEY,
+      chat_jid TEXT NOT NULL,
+      channel TEXT,
+      role TEXT NOT NULL,
+      content TEXT NOT NULL,
+      timestamp TEXT NOT NULL,
+      sender TEXT,
+      sender_name TEXT,
+      intent TEXT,
+      metadata TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_interaction_events_chat_time
+      ON interaction_events(chat_jid, timestamp DESC);
+
+    CREATE TABLE IF NOT EXISTS mind_state (
+      id TEXT PRIMARY KEY,
+      version INTEGER NOT NULL,
+      lifecycle TEXT NOT NULL,
+      persona_json TEXT NOT NULL,
+      memory_summary TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS mind_packages (
+      id TEXT PRIMARY KEY,
+      version INTEGER NOT NULL UNIQUE,
+      lifecycle TEXT NOT NULL,
+      persona_json TEXT NOT NULL,
+      memory_summary TEXT NOT NULL,
+      changelog TEXT NOT NULL,
+      created_at TEXT NOT NULL
     );
   `);
 
@@ -254,6 +292,169 @@ export function setLastGroupSync(): void {
   db.prepare(
     `INSERT OR REPLACE INTO chats (jid, name, last_message_time) VALUES ('__group_sync__', '__group_sync__', ?)`,
   ).run(now);
+}
+
+// --- Mind interaction events ---
+
+export function storeInteractionEvent(event: InteractionEvent): void {
+  db.prepare(
+    `INSERT OR REPLACE INTO interaction_events (id, chat_jid, channel, role, content, timestamp, sender, sender_name, intent, metadata)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(
+    event.id,
+    event.chat_jid,
+    event.channel || null,
+    event.role,
+    event.content,
+    event.timestamp,
+    event.sender || null,
+    event.sender_name || null,
+    event.intent || null,
+    event.metadata ? JSON.stringify(event.metadata) : null,
+  );
+}
+
+export function getRecentInteractionEvents(chatJid: string, limit = 20): InteractionEvent[] {
+  const rows = db
+    .prepare(
+      `SELECT id, chat_jid, channel, role, content, timestamp, sender, sender_name, intent, metadata
+       FROM interaction_events WHERE chat_jid = ? ORDER BY timestamp DESC LIMIT ?`,
+    )
+    .all(chatJid, limit) as any[];
+
+  return rows.reverse().map((row) => ({
+    id: row.id,
+    chat_jid: row.chat_jid,
+    channel: row.channel || undefined,
+    role: row.role,
+    content: row.content,
+    timestamp: row.timestamp,
+    sender: row.sender || undefined,
+    sender_name: row.sender_name || undefined,
+    intent: row.intent || undefined,
+    metadata: row.metadata ? JSON.parse(row.metadata) : undefined,
+  }));
+}
+
+// --- Mind state & packages ---
+
+function ensureDefaultMindState(): void {
+  const existing = db.prepare('SELECT id FROM mind_state WHERE id = ?').get('default') as { id: string } | undefined;
+  if (existing) return;
+  const now = new Date().toISOString();
+  db.prepare(
+    `INSERT INTO mind_state (id, version, lifecycle, persona_json, memory_summary, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+  ).run('default', 1, 'draft', JSON.stringify({ tone: 'friendly', verbosity: 'normal', emoji: false }), '', now);
+}
+
+export function getMindState(): MindState {
+  ensureDefaultMindState();
+  const row = db
+    .prepare('SELECT id, version, lifecycle, persona_json, memory_summary, updated_at FROM mind_state WHERE id = ?')
+    .get('default') as any;
+  return {
+    id: row.id,
+    version: row.version,
+    lifecycle: row.lifecycle,
+    persona: JSON.parse(row.persona_json || '{}'),
+    memory_summary: row.memory_summary || '',
+    updated_at: row.updated_at,
+  };
+}
+
+export function updateMindState(partial: {
+  version?: number;
+  lifecycle?: MindLifecycle;
+  persona?: Record<string, unknown>;
+  memory_summary?: string;
+}): MindState {
+  const current = getMindState();
+  const next = {
+    ...current,
+    version: partial.version ?? current.version,
+    lifecycle: partial.lifecycle ?? current.lifecycle,
+    persona: partial.persona ?? current.persona,
+    memory_summary: partial.memory_summary ?? current.memory_summary,
+    updated_at: new Date().toISOString(),
+  };
+
+  db.prepare(
+    `UPDATE mind_state SET version = ?, lifecycle = ?, persona_json = ?, memory_summary = ?, updated_at = ? WHERE id = ?`,
+  ).run(
+    next.version,
+    next.lifecycle,
+    JSON.stringify(next.persona),
+    next.memory_summary,
+    next.updated_at,
+    next.id,
+  );
+
+  return next;
+}
+
+export function createMindPackage(changelog: string): MindPackage {
+  const state = getMindState();
+  const now = new Date().toISOString();
+  const pkg: MindPackage = {
+    id: `mind-${state.version}`,
+    version: state.version,
+    lifecycle: state.lifecycle,
+    persona: state.persona,
+    memory_summary: state.memory_summary,
+    changelog,
+    created_at: now,
+  };
+
+  db.prepare(
+    `INSERT OR REPLACE INTO mind_packages (id, version, lifecycle, persona_json, memory_summary, changelog, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+  ).run(
+    pkg.id,
+    pkg.version,
+    pkg.lifecycle,
+    JSON.stringify(pkg.persona),
+    pkg.memory_summary,
+    pkg.changelog,
+    pkg.created_at,
+  );
+
+  return pkg;
+}
+
+export function listMindPackages(limit = 20): MindPackage[] {
+  const rows = db
+    .prepare(
+      `SELECT id, version, lifecycle, persona_json, memory_summary, changelog, created_at
+       FROM mind_packages ORDER BY version DESC LIMIT ?`,
+    )
+    .all(limit) as any[];
+
+  return rows.map((row) => ({
+    id: row.id,
+    version: row.version,
+    lifecycle: row.lifecycle,
+    persona: JSON.parse(row.persona_json || '{}'),
+    memory_summary: row.memory_summary,
+    changelog: row.changelog,
+    created_at: row.created_at,
+  }));
+}
+
+export function rollbackMindPackage(version: number): MindState | null {
+  const row = db
+    .prepare(
+      `SELECT version, lifecycle, persona_json, memory_summary FROM mind_packages WHERE version = ?`,
+    )
+    .get(version) as any;
+  if (!row) return null;
+
+  return updateMindState({
+    version: row.version,
+    lifecycle: row.lifecycle,
+    persona: JSON.parse(row.persona_json || '{}'),
+    memory_summary: row.memory_summary || '',
+  });
 }
 
 /**

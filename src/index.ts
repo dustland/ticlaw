@@ -31,6 +31,15 @@ import {
   storeMessage,
   getRecentMessages,
 } from './core/db.js';
+import {
+  createPackage,
+  listPackages,
+  lockMind,
+  mindStatus,
+  recordUserInteraction,
+  rollbackPackage,
+  unlockMind,
+} from './core/mind.js';
 import { logger } from './core/logger.js';
 import {
   routeOutbound,
@@ -103,6 +112,24 @@ async function processMessages(chatJid: string): Promise<boolean> {
   // Extract raw text from messages for agent thinking
   const rawText = messages.map((m) => m.content).join('\n');
 
+  // Natural conversation updates mind (non-blocking simple updater)
+  const latestMsg = messages[messages.length - 1];
+  if (latestMsg?.content && !latestMsg.content.trim().startsWith('/mind')) {
+    try {
+      recordUserInteraction({
+        chat_jid: chatJid,
+        channel: chatJid.startsWith('dc:') ? 'discord' : chatJid.startsWith('tg:') ? 'telegram' : undefined,
+        role: 'user',
+        content: latestMsg.content,
+        timestamp: latestMsg.timestamp,
+        sender: latestMsg.sender,
+        sender_name: latestMsg.sender_name,
+      });
+    } catch (err) {
+      logger.warn({ err }, 'mind updater failed (ignored)');
+    }
+  }
+
   const recentMessages = getRecentMessages(chatJid, 10);
   let contextText = rawText;
   if (recentMessages.length > messages.length) {
@@ -124,6 +151,64 @@ async function processMessages(chatJid: string): Promise<boolean> {
   try {
     // Show typing indicator while we process
     routeSetTyping(channels, chatJid, true);
+
+    // Mind commands (text-only control plane)
+    const latestText = messages[messages.length - 1]?.content?.trim() || '';
+    if (latestText.startsWith('/mind')) {
+      const parts = latestText.split(/\s+/);
+      const cmd = parts[1] || 'status';
+
+      if (cmd === 'status') {
+        const state = mindStatus();
+        await sendFn(
+          chatJid,
+          `🧠 Mind status\n- version: ${state.version}\n- lifecycle: ${state.lifecycle}\n- persona: ${JSON.stringify(state.persona)}`,
+        );
+        return true;
+      }
+
+      if (cmd === 'lock') {
+        const state = lockMind();
+        await sendFn(chatJid, `✅ Mind locked at version ${state.version}`);
+        return true;
+      }
+
+      if (cmd === 'unlock') {
+        const state = unlockMind();
+        await sendFn(chatJid, `✅ Mind unlocked (lifecycle=${state.lifecycle})`);
+        return true;
+      }
+
+      if (cmd === 'package') {
+        const sub = parts[2] || 'create';
+        if (sub === 'create') {
+          const pkg = createPackage('Created via /mind package create');
+          await sendFn(chatJid, `📦 Mind package created: v${pkg.version} (${pkg.id})`);
+          return true;
+        }
+        if (sub === 'list') {
+          const pkgs = listPackages(5);
+          const lines = pkgs.map((p) => `- v${p.version} [${p.lifecycle}] ${p.id}`).join('\n');
+          await sendFn(chatJid, `📚 Recent mind packages\n${lines || '(empty)'}`);
+          return true;
+        }
+      }
+
+      if (cmd === 'rollback') {
+        const version = Number(parts[2]);
+        if (!Number.isFinite(version)) {
+          await sendFn(chatJid, 'Usage: /mind rollback <version>');
+          return true;
+        }
+        const state = rollbackPackage(version);
+        if (!state) {
+          await sendFn(chatJid, `❌ Mind package version ${version} not found`);
+          return true;
+        }
+        await sendFn(chatJid, `↩️ Rolled back to mind version ${state.version}`);
+        return true;
+      }
+    }
 
     // Check if we have a valid workspace for this group
     const workspace = getFactoryPath(group);
