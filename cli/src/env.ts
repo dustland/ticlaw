@@ -7,17 +7,12 @@
  *   tc env remove <name>    Remove an environment
  */
 
-import { execSync } from 'child_process';
+import { execSync, execFileSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import yaml from 'yaml';
 import type { Command } from 'commander';
-import {
-  prompt,
-  readConfig,
-  TICLAW_HOME,
-  CONFIG_PATH,
-} from './utils.js';
+import { prompt, readConfig, TICLAW_HOME, CONFIG_PATH } from './utils.js';
 
 const WORKSPACES_DIR = path.join(TICLAW_HOME, 'workspaces');
 const ENVS_DIR = path.join(TICLAW_HOME, 'envs');
@@ -112,12 +107,24 @@ async function addEnv(name: string): Promise<void> {
     repoFullName = await prompt('  GitHub repo (owner/name)');
   }
 
-  if (!repoFullName || !repoFullName.includes('/')) {
-    console.error('  ❌ Invalid repo format. Expected: owner/repo');
+  const repoRegex = /^[a-zA-Z0-9][a-zA-Z0-9._-]*\/[a-zA-Z0-9._-]+$/;
+  if (
+    !repoFullName ||
+    !repoRegex.test(repoFullName) ||
+    repoFullName.includes('..')
+  ) {
+    console.error(
+      '  ❌ Invalid repo format. Expected: owner/repo (no directory traversal allowed)',
+    );
     process.exit(1);
   }
 
   const branch = await prompt('  Branch', 'main');
+  const branchInvalidChars = /[;|&$`\n]/;
+  if (!branch || branch.includes('..') || branchInvalidChars.test(branch)) {
+    console.error('  ❌ Invalid branch name.');
+    process.exit(1);
+  }
 
   // 2. Clone workspace
   const [owner, repo] = repoFullName.split('/');
@@ -129,8 +136,16 @@ async function addEnv(name: string): Promise<void> {
     console.log(`\n  📦 Cloning ${repoFullName}@${branch}...`);
     fs.mkdirSync(path.dirname(workspaceDir), { recursive: true });
     try {
-      execSync(
-        `git clone --branch ${branch} --single-branch https://github.com/${repoFullName}.git ${workspaceDir}`,
+      execFileSync(
+        'git',
+        [
+          'clone',
+          '--branch',
+          branch,
+          '--single-branch',
+          `https://github.com/${repoFullName}.git`,
+          workspaceDir,
+        ],
         { stdio: 'inherit' },
       );
       console.log('  ✅ Cloned successfully');
@@ -148,13 +163,18 @@ async function addEnv(name: string): Promise<void> {
     console.log(`\n  💬 Creating Discord channel #${name}...`);
     try {
       // Use Discord REST API directly to avoid importing full discord.js
-      const response = await fetch('https://discord.com/api/v10/users/@me/guilds', {
-        headers: { Authorization: `Bot ${discordToken}` },
-      });
-      const guilds = await response.json() as any[];
+      const response = await fetch(
+        'https://discord.com/api/v10/users/@me/guilds',
+        {
+          headers: { Authorization: `Bot ${discordToken}` },
+        },
+      );
+      const guilds = (await response.json()) as any[];
 
       if (guilds.length === 0) {
-        console.log('  ⚠️  Bot is not in any guilds. Add the bot to a server first.');
+        console.log(
+          '  ⚠️  Bot is not in any guilds. Add the bot to a server first.',
+        );
       } else {
         let guildId = guilds[0].id;
         if (guilds.length > 1) {
@@ -187,9 +207,11 @@ async function addEnv(name: string): Promise<void> {
         );
 
         if (createRes.ok) {
-          const channel = await createRes.json() as any;
+          const channel = (await createRes.json()) as any;
           discordChannelId = channel.id;
-          console.log(`  ✅ Created Discord channel #${name} (ID: ${discordChannelId})`);
+          console.log(
+            `  ✅ Created Discord channel #${name} (ID: ${discordChannelId})`,
+          );
 
           // Send welcome message
           await fetch(
@@ -201,7 +223,8 @@ async function addEnv(name: string): Promise<void> {
                 'Content-Type': 'application/json',
               },
               body: JSON.stringify({
-                content: `🦀 **TiClaw Environment Ready**\n\n` +
+                content:
+                  `🦀 **TiClaw Environment Ready**\n\n` +
                   `**Repo:** ${repoFullName}\n` +
                   `**Branch:** ${branch}\n` +
                   `**Workspace:** \`${workspaceDir}\`\n\n` +
@@ -261,7 +284,9 @@ async function addEnv(name: string): Promise<void> {
       );
 
       db.close();
-      console.log(`  ✅ Group registered: #${name} → ${repoFullName}@${branch}`);
+      console.log(
+        `  ✅ Group registered: #${name} → ${repoFullName}@${branch}`,
+      );
     } catch (err: any) {
       console.log(`  ⚠️  SQLite registration failed: ${err.message}`);
     }
@@ -289,9 +314,7 @@ async function addEnv(name: string): Promise<void> {
   if (discordChannelId) {
     console.log(`  Discord: #${name}`);
     const config = readConfig();
-    console.log(
-      `  Trigger: @${config.assistant_name || 'Andy'} <your task>`,
-    );
+    console.log(`  Trigger: @${config.assistant_name || 'Andy'} <your task>`);
   }
   console.log('');
 }
@@ -300,7 +323,9 @@ async function addEnv(name: string): Promise<void> {
 
 function listEnvs(): void {
   if (!fs.existsSync(ENVS_DIR)) {
-    console.log('\n  No environments configured. Run `tc env add <name>` to create one.\n');
+    console.log(
+      '\n  No environments configured. Run `tc env add <name>` to create one.\n',
+    );
     return;
   }
 
@@ -308,13 +333,19 @@ function listEnvs(): void {
   const envs = entries.filter((e) => e.isDirectory());
 
   if (envs.length === 0) {
-    console.log('\n  No environments configured. Run `tc env add <name>` to create one.\n');
+    console.log(
+      '\n  No environments configured. Run `tc env add <name>` to create one.\n',
+    );
     return;
   }
 
   console.log('\n  Environments:\n');
-  console.log('  Name              Repo                          Branch    Discord');
-  console.log('  ────────────────  ────────────────────────────  ────────  ─────────');
+  console.log(
+    '  Name              Repo                          Branch    Discord',
+  );
+  console.log(
+    '  ────────────────  ────────────────────────────  ────────  ─────────',
+  );
 
   for (const env of envs) {
     const config = readEnvConfig(env.name);
@@ -410,13 +441,12 @@ export function registerEnvCommand(program: Command): void {
 
   env
     .command('add <name>')
-    .description('Create a new environment (clone repo, create Discord channel)')
+    .description(
+      'Create a new environment (clone repo, create Discord channel)',
+    )
     .action(addEnv);
 
-  env
-    .command('list')
-    .description('List all environments')
-    .action(listEnvs);
+  env.command('list').description('List all environments').action(listEnvs);
 
   env
     .command('remove <name>')
