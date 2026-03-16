@@ -12,7 +12,10 @@ export const CONFIG_PATH = path.join(TICLAW_HOME, 'config.yaml');
 /**
  * Prompts the user for input via the command line.
  */
-export function prompt(question: string, defaultValue?: string): Promise<string> {
+export function prompt(
+  question: string,
+  defaultValue?: string,
+): Promise<string> {
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
@@ -29,7 +32,7 @@ export function prompt(question: string, defaultValue?: string): Promise<string>
 /**
  * Reads and parses the TiClaw configuration file.
  */
-export function readConfig(): any {
+export function readConfig(): unknown {
   try {
     return yaml.parse(fs.readFileSync(CONFIG_PATH, 'utf-8')) || {};
   } catch {

@@ -10,22 +10,17 @@
  * 6. Install and start system service
  */
 
-import { execSync } from 'child_process';
+import { execSync, execFileSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import yaml from 'yaml';
-import {
-  prompt,
-  PROJECT_ROOT,
-  TICLAW_HOME,
-  CONFIG_PATH,
-} from './utils.js';
+import { prompt, PROJECT_ROOT, TICLAW_HOME, CONFIG_PATH } from './utils.js';
 
 function detectCLIs(): Record<string, boolean> {
   const clis: Record<string, boolean> = {};
   for (const name of ['gemini', 'claude', 'codex', 'gh', 'git']) {
     try {
-      execSync(`command -v ${name}`, { stdio: 'ignore' });
+      execFileSync('which', [name], { stdio: 'ignore' });
       clis[name] = true;
     } catch {
       clis[name] = false;
@@ -48,27 +43,39 @@ export async function bootstrap(): Promise<void> {
     console.log(`    ${found ? '✅' : '❌'} ${name}`);
   }
 
-  const primaryCli = clis['gemini'] ? 'gemini' : clis['claude'] ? 'claude' : null;
+  const primaryCli = clis['gemini']
+    ? 'gemini'
+    : clis['claude']
+      ? 'claude'
+      : null;
   if (!primaryCli) {
     console.log(
       '\n  ⚠️  No coding CLI detected. Install Gemini CLI:',
       '\n     npm install -g @google/gemini-cli',
     );
   }
-  console.log(`  Primary CLI: ${primaryCli || 'none (will need to install one)'}\n`);
+  console.log(
+    `  Primary CLI: ${primaryCli || 'none (will need to install one)'}\n`,
+  );
 
   // 3. Collect configuration
   const dataDir = await prompt('Data directory', TICLAW_HOME);
   const httpProxy = await prompt('HTTP proxy (leave empty if not needed)', '');
   const githubRepo = await prompt('GitHub repo URL for first workspace', '');
-  const discordToken = await prompt('Discord bot token (required for messaging)', '');
+  const discordToken = await prompt(
+    'Discord bot token (required for messaging)',
+    '',
+  );
   const assistantName = await prompt('Assistant name', 'Andy');
 
   // Note: Gemini CLI and Claude use their own OAuth — no API key needed.
   // API keys are only needed for direct API access without a CLI.
 
   // LLM config (OpenRouter powers the agent brain)
-  const openrouterKey = await prompt('OpenRouter API key (powers agent thinking)', '');
+  const openrouterKey = await prompt(
+    'OpenRouter API key (powers agent thinking)',
+    '',
+  );
   const llmModel = await prompt('LLM model', 'google/gemini-2.5-flash');
 
   // 4. Build config object
@@ -131,39 +138,53 @@ export async function bootstrap(): Promise<void> {
   if (discordToken) {
     console.log('\n  📦 Applying Discord channel skill...');
     try {
-      execSync('pnpm dlx tsx scripts/apply-skill.ts skills/add-discord', {
-        cwd: PROJECT_ROOT,
-        stdio: 'inherit',
-      });
+      execFileSync(
+        'pnpm',
+        ['dlx', 'tsx', 'scripts/apply-skill.ts', 'skills/add-discord'],
+        {
+          cwd: PROJECT_ROOT,
+          stdio: 'inherit',
+        },
+      );
       console.log('  ✅ Discord channel installed');
     } catch {
-      console.error('  ⚠️  Discord skill apply failed — you can retry with: tc skills add discord');
+      console.error(
+        '  ⚠️  Discord skill apply failed — you can retry with: tc skills add discord',
+      );
     }
   }
 
   // 7. Build
   console.log('\n  🔨 Building TiClaw...');
   try {
-    execSync('pnpm run build', {
+    execFileSync('pnpm', ['run', 'build'], {
       cwd: PROJECT_ROOT,
       stdio: 'inherit',
     });
     console.log('  ✅ Build complete');
   } catch {
-    console.error('  ❌ Build failed. Run `pnpm run build` manually to see errors.');
+    console.error(
+      '  ❌ Build failed. Run `pnpm run build` manually to see errors.',
+    );
     process.exit(1);
   }
 
   // 8. Install and start service
   console.log('\n  🚀 Installing system service...');
   try {
-    execSync('pnpm dlx tsx setup/index.ts --step service', {
-      cwd: PROJECT_ROOT,
-      stdio: 'inherit',
-    });
+    execFileSync(
+      'pnpm',
+      ['dlx', 'tsx', 'setup/index.ts', '--step', 'service'],
+      {
+        cwd: PROJECT_ROOT,
+        stdio: 'inherit',
+      },
+    );
     console.log('  ✅ Service installed and started');
   } catch {
-    console.error('  ⚠️  Service install failed. You can start manually with: tc start');
+    console.error(
+      '  ⚠️  Service install failed. You can start manually with: tc start',
+    );
   }
 
   // Done
