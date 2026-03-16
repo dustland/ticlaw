@@ -7,7 +7,7 @@
  *   tc skills remove <name>     Uninstall a skill
  */
 
-import { execSync } from 'child_process';
+import { execSync, execFileSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import type { Command } from 'commander';
@@ -46,7 +46,9 @@ function listSkills(): void {
 
   console.log('\n  Available Skills:\n');
   console.log('  Status  Name                  Description');
-  console.log('  ──────  ────────────────────  ──────────────────────────────────');
+  console.log(
+    '  ──────  ────────────────────  ──────────────────────────────────',
+  );
 
   for (const skill of skills) {
     const isApplied = skill.name in applied;
@@ -90,12 +92,18 @@ function addSkill(name: string): void {
 
   console.log(`\n  📦 Applying skill: ${name}...\n`);
   try {
-    execSync(`pnpm dlx tsx scripts/apply-skill.ts skills/${name}`, {
-      cwd: PROJECT_ROOT,
-      stdio: 'inherit',
-    });
+    execFileSync(
+      'pnpm',
+      ['dlx', 'tsx', 'scripts/apply-skill.ts', `skills/${name}`],
+      {
+        cwd: PROJECT_ROOT,
+        stdio: 'inherit',
+      },
+    );
     console.log(`\n  ✅ Skill "${name}" applied successfully.`);
-    console.log('  Run `pnpm run build` to rebuild, then `tc start` to restart.\n');
+    console.log(
+      '  Run `pnpm run build` to rebuild, then `tc start` to restart.\n',
+    );
   } catch {
     console.error(`\n  ❌ Failed to apply skill "${name}".`);
     process.exit(1);
@@ -108,12 +116,18 @@ function removeSkill(name: string): void {
 
   console.log(`\n  🗑  Removing skill: ${fullName}...\n`);
   try {
-    execSync(`pnpm dlx tsx scripts/uninstall-skill.ts ${fullName}`, {
-      cwd: PROJECT_ROOT,
-      stdio: 'inherit',
-    });
+    execFileSync(
+      'pnpm',
+      ['dlx', 'tsx', 'scripts/uninstall-skill.ts', fullName],
+      {
+        cwd: PROJECT_ROOT,
+        stdio: 'inherit',
+      },
+    );
     console.log(`\n  ✅ Skill "${fullName}" removed.`);
-    console.log('  Run `pnpm run build` to rebuild, then `tc start` to restart.\n');
+    console.log(
+      '  Run `pnpm run build` to rebuild, then `tc start` to restart.\n',
+    );
   } catch {
     console.error(`\n  ❌ Failed to remove skill "${fullName}".`);
     process.exit(1);
@@ -121,9 +135,7 @@ function removeSkill(name: string): void {
 }
 
 export function registerSkillsCommand(program: Command): void {
-  const skills = program
-    .command('skills')
-    .description('Manage TiClaw skills');
+  const skills = program.command('skills').description('Manage TiClaw skills');
 
   skills
     .command('list')

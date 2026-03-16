@@ -126,7 +126,7 @@ export async function stop(): Promise<void> {
 
 export async function status(): Promise<void> {
   const platform = getPlatform();
-  const config = readConfig();
+  const config = readConfig() as any;
 
   console.log('\n  🦀 TiClaw Status\n');
 
@@ -139,16 +139,22 @@ export async function status(): Promise<void> {
       const parts = output.trim().split('\t');
       const pid = parts[0];
       const running = pid !== '-';
-      console.log(`  Service: ${running ? '🟢 Running' : '🔴 Stopped'} (PID: ${pid})`);
+      console.log(
+        `  Service: ${running ? '🟢 Running' : '🔴 Stopped'} (PID: ${pid})`,
+      );
     } catch {
       console.log('  Service: 🔴 Not installed');
     }
   } else if (platform === 'linux') {
     try {
       const unit = getSystemdUnit();
-      const cmd = isRoot() ? `systemctl is-active ${unit}` : `systemctl --user is-active ${unit}`;
+      const cmd = isRoot()
+        ? `systemctl is-active ${unit}`
+        : `systemctl --user is-active ${unit}`;
       const state = execSync(cmd, { encoding: 'utf-8' }).trim();
-      console.log(`  Service: ${state === 'active' ? '🟢 Running' : '🔴 ' + state}`);
+      console.log(
+        `  Service: ${state === 'active' ? '🟢 Running' : '🔴 ' + state}`,
+      );
     } catch {
       console.log('  Service: 🔴 Not installed');
     }
@@ -181,9 +187,12 @@ export async function status(): Promise<void> {
 
   // Config summary
   console.log('\n  Config:');
-  console.log(`    File: ${fs.existsSync(CONFIG_PATH) ? CONFIG_PATH : '(not found — run tc bootstrap)'}`);
+  console.log(
+    `    File: ${fs.existsSync(CONFIG_PATH) ? CONFIG_PATH : '(not found — run tc bootstrap)'}`,
+  );
   if (config.coding_cli) console.log(`    Coding CLI: ${config.coding_cli}`);
-  if (config.assistant_name) console.log(`    Assistant: ${config.assistant_name}`);
+  if (config.assistant_name)
+    console.log(`    Assistant: ${config.assistant_name}`);
   if (config.proxy) console.log(`    Proxy: ${config.proxy}`);
 
   console.log('');
