@@ -37,8 +37,8 @@ describe('router', () => {
     });
 
     it('should not remove unfinished internal tags', () => {
-        const input = 'Hello <internal>unclosed';
-        expect(stripInternalTags(input)).toBe('Hello <internal>unclosed');
+      const input = 'Hello <internal>unclosed';
+      expect(stripInternalTags(input)).toBe('Hello <internal>unclosed');
     });
   });
 
