@@ -12,7 +12,10 @@ export const CONFIG_PATH = path.join(TICLAW_HOME, 'config.yaml');
 /**
  * Prompts the user for input via the command line.
  */
-export function prompt(question: string, defaultValue?: string): Promise<string> {
+export function prompt(
+  question: string,
+  defaultValue?: string,
+): Promise<string> {
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
