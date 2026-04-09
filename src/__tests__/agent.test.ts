@@ -3,10 +3,13 @@ import { runAgentOrchestrator } from '../agent.js';
 import * as ai from 'ai';
 
 // Mock the AI SDK and dependencies
-vi.mock('ai', () => ({
-  generateText: vi.fn(),
-  tool: vi.fn((x) => x),
-}));
+vi.mock('ai', async (importOriginal) => {
+  const actual: any = await importOriginal();
+  return {
+    ...actual,
+    generateText: vi.fn(),
+  };
+});
 
 vi.mock('@openrouter/ai-sdk-provider', () => ({
   createOpenRouter: vi.fn().mockReturnValue(() => 'mock-model'),
@@ -27,15 +30,14 @@ vi.mock('../logger.js', () => ({
 
 // Mock the tools
 vi.mock('../tools/executor.js', () => ({
-  buildExecutorTool: vi.fn().mockReturnValue({
-    execute: vi.fn().mockResolvedValue('Executor called'),
+  buildSessionTools: vi.fn().mockReturnValue({
+    captureSessionTool: vi.fn((x) => x),
+    sendToSessionTool: vi.fn((x) => x),
   }),
 }));
 
-vi.mock('../tools/setup-workspace.js', () => ({
-  buildSetupWorkspaceTool: vi.fn().mockReturnValue({
-    execute: vi.fn().mockResolvedValue('Setup called'),
-  }),
+vi.mock('../tools/workspace.js', () => ({
+  buildWorkspaceTool: vi.fn().mockReturnValue(vi.fn((x) => x)),
 }));
 
 describe('Agent Orchestrator', () => {
@@ -67,6 +69,7 @@ describe('Agent Orchestrator', () => {
   it('should call generateText with correct model and tools', async () => {
     vi.mocked(ai.generateText).mockResolvedValueOnce({
       text: 'I have scheduled the requested work via tools.',
+      steps: [{ toolCalls: [] }],
       toolCalls: [],
     } as any);
 
@@ -76,7 +79,8 @@ describe('Agent Orchestrator', () => {
     const callArgs = vi.mocked(ai.generateText).mock.calls[0][0];
 
     expect((callArgs as any).system).toContain('You are TiClaw');
-    expect((callArgs as any).tools).toHaveProperty('executorTool');
+    expect((callArgs as any).tools).toHaveProperty('captureSessionTool');
+    expect((callArgs as any).tools).toHaveProperty('sendToSessionTool');
     expect((callArgs as any).tools).toHaveProperty('workspaceTool');
 
     expect(result).toBe('I have scheduled the requested work via tools.');
