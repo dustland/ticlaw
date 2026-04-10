@@ -6,6 +6,7 @@ import * as ai from 'ai';
 vi.mock('ai', () => ({
   generateText: vi.fn(),
   tool: vi.fn((x) => x),
+  stepCountIs: vi.fn(),
 }));
 
 vi.mock('@openrouter/ai-sdk-provider', () => ({
@@ -26,17 +27,26 @@ vi.mock('../logger.js', () => ({
 }));
 
 // Mock the tools
-vi.mock('../tools/executor.js', () => ({
-  buildExecutorTool: vi.fn().mockReturnValue({
-    execute: vi.fn().mockResolvedValue('Executor called'),
-  }),
-}));
+vi.mock('../tools/executor.js', async (importOriginal) => {
+  const actual: any = await importOriginal();
+  return {
+    ...actual,
+    buildSessionTools: vi.fn().mockReturnValue({
+      captureSessionTool: { execute: vi.fn().mockResolvedValue('Capture called') },
+      sendToSessionTool: { execute: vi.fn().mockResolvedValue('Send called') },
+    }),
+  };
+});
 
-vi.mock('../tools/setup-workspace.js', () => ({
-  buildSetupWorkspaceTool: vi.fn().mockReturnValue({
-    execute: vi.fn().mockResolvedValue('Setup called'),
-  }),
-}));
+vi.mock('../tools/workspace.js', async (importOriginal) => {
+  const actual: any = await importOriginal();
+  return {
+    ...actual,
+    buildWorkspaceTool: vi.fn().mockReturnValue({
+      execute: vi.fn().mockResolvedValue('Workspace called'),
+    }),
+  };
+});
 
 describe('Agent Orchestrator', () => {
   const dummyOpts = {
@@ -67,7 +77,7 @@ describe('Agent Orchestrator', () => {
   it('should call generateText with correct model and tools', async () => {
     vi.mocked(ai.generateText).mockResolvedValueOnce({
       text: 'I have scheduled the requested work via tools.',
-      toolCalls: [],
+      steps: [{ toolCalls: [] }],
     } as any);
 
     const result = await runAgentOrchestrator(dummyOpts);
@@ -76,7 +86,8 @@ describe('Agent Orchestrator', () => {
     const callArgs = vi.mocked(ai.generateText).mock.calls[0][0];
 
     expect((callArgs as any).system).toContain('You are TiClaw');
-    expect((callArgs as any).tools).toHaveProperty('executorTool');
+    expect((callArgs as any).tools).toHaveProperty('captureSessionTool');
+    expect((callArgs as any).tools).toHaveProperty('sendToSessionTool');
     expect((callArgs as any).tools).toHaveProperty('workspaceTool');
 
     expect(result).toBe('I have scheduled the requested work via tools.');
