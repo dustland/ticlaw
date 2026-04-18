@@ -28,22 +28,20 @@ program
 
 program
   .command('bootstrap')
-  .description('First-time setup: detect CLIs, configure .env, apply initial skills, install service')
+  .description(
+    'First-time setup: detect CLIs, configure .env, apply initial skills, install service',
+  )
   .action(bootstrap);
 
-program
-  .command('start')
-  .description('Start the TiClaw service')
-  .action(start);
+program.command('start').description('Start the TiClaw service').action(start);
 
-program
-  .command('stop')
-  .description('Stop the TiClaw service')
-  .action(stop);
+program.command('stop').description('Stop the TiClaw service').action(stop);
 
 program
   .command('status')
-  .description('Show service state, connected channels, and detected coding CLIs')
+  .description(
+    'Show service state, connected channels, and detected coding CLIs',
+  )
   .action(status);
 
 registerSkillsCommand(program);
