@@ -1,4 +1,4 @@
-import { generateText, stepCountIs, type ModelMessage } from 'ai';
+import { generateText, type ModelMessage } from 'ai';
 import { createOpenRouter } from '@openrouter/ai-sdk-provider';
 import type { ContainerOutput } from './core/types.js';
 import { buildSessionTools } from './tools/executor.js';
@@ -236,7 +236,6 @@ When acknowledging a sent task, briefly confirm what you sent. For example:
         captureSessionTool,
         sendToSessionTool,
       },
-      stopWhen: stepCountIs(250),
       onStepFinish({ toolCalls }) {
         if (toolCalls.length > 0) {
           const names = toolCalls.map((t) => t.toolName).join(', ');
