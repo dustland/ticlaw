@@ -12,11 +12,11 @@ vi.mock('@openrouter/ai-sdk-provider', () => ({
   createOpenRouter: vi.fn().mockReturnValue(() => 'mock-model'),
 }));
 
-vi.mock('../env.js', () => ({
+vi.mock('../core/env.js', () => ({
   readEnvFile: vi.fn().mockReturnValue({ OPENROUTER_API_KEY: 'test-key' }),
 }));
 
-vi.mock('../logger.js', () => ({
+vi.mock('../core/logger.js', () => ({
   logger: {
     info: vi.fn(),
     error: vi.fn(),
@@ -27,15 +27,14 @@ vi.mock('../logger.js', () => ({
 
 // Mock the tools
 vi.mock('../tools/executor.js', () => ({
-  buildExecutorTool: vi.fn().mockReturnValue({
-    execute: vi.fn().mockResolvedValue('Executor called'),
+  buildSessionTools: vi.fn().mockReturnValue({
+    captureSessionTool: vi.fn((x) => x),
+    sendToSessionTool: vi.fn((x) => x),
   }),
 }));
 
-vi.mock('../tools/setup-workspace.js', () => ({
-  buildSetupWorkspaceTool: vi.fn().mockReturnValue({
-    execute: vi.fn().mockResolvedValue('Setup called'),
-  }),
+vi.mock('../tools/workspace.js', () => ({
+  buildWorkspaceTool: vi.fn().mockReturnValue(vi.fn((x) => x)),
 }));
 
 describe('Agent Orchestrator', () => {
@@ -68,6 +67,7 @@ describe('Agent Orchestrator', () => {
     vi.mocked(ai.generateText).mockResolvedValueOnce({
       text: 'I have scheduled the requested work via tools.',
       toolCalls: [],
+      steps: [],
     } as any);
 
     const result = await runAgentOrchestrator(dummyOpts);
@@ -76,7 +76,8 @@ describe('Agent Orchestrator', () => {
     const callArgs = vi.mocked(ai.generateText).mock.calls[0][0];
 
     expect((callArgs as any).system).toContain('You are TiClaw');
-    expect((callArgs as any).tools).toHaveProperty('executorTool');
+    expect((callArgs as any).tools).toHaveProperty('captureSessionTool');
+    expect((callArgs as any).tools).toHaveProperty('sendToSessionTool');
     expect((callArgs as any).tools).toHaveProperty('workspaceTool');
 
     expect(result).toBe('I have scheduled the requested work via tools.');
