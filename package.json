@@ -21,7 +21,7 @@
   "dependencies": {
     "@openrouter/ai-sdk-provider": "^2.2.3",
     "ai": "^6.0.111",
-    "better-sqlite3": "^11.8.1",
+    "better-sqlite3": "^12.10.0",
     "cron-parser": "^5.5.0",
     "discord.js": "^14.25.1",
     "https-proxy-agent": "^7.0.6",
