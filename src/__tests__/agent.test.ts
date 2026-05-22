@@ -4,6 +4,7 @@ import * as ai from 'ai';
 
 // Mock the AI SDK and dependencies
 vi.mock('ai', () => ({
+  stepCountIs: vi.fn(),
   generateText: vi.fn(),
   tool: vi.fn((x) => x),
 }));
@@ -27,13 +28,13 @@ vi.mock('../logger.js', () => ({
 
 // Mock the tools
 vi.mock('../tools/executor.js', () => ({
-  buildExecutorTool: vi.fn().mockReturnValue({
+  buildSessionTools: vi.fn().mockReturnValue({
     execute: vi.fn().mockResolvedValue('Executor called'),
   }),
 }));
 
-vi.mock('../tools/setup-workspace.js', () => ({
-  buildSetupWorkspaceTool: vi.fn().mockReturnValue({
+vi.mock('../tools/workspace.js', () => ({
+  buildWorkspaceTool: vi.fn().mockReturnValue({
     execute: vi.fn().mockResolvedValue('Setup called'),
   }),
 }));
@@ -68,6 +69,7 @@ describe('Agent Orchestrator', () => {
     vi.mocked(ai.generateText).mockResolvedValueOnce({
       text: 'I have scheduled the requested work via tools.',
       toolCalls: [],
+      steps: [],
     } as any);
 
     const result = await runAgentOrchestrator(dummyOpts);
@@ -76,7 +78,8 @@ describe('Agent Orchestrator', () => {
     const callArgs = vi.mocked(ai.generateText).mock.calls[0][0];
 
     expect((callArgs as any).system).toContain('You are TiClaw');
-    expect((callArgs as any).tools).toHaveProperty('executorTool');
+    expect((callArgs as any).tools).toHaveProperty('captureSessionTool');
+    expect((callArgs as any).tools).toHaveProperty('sendToSessionTool');
     expect((callArgs as any).tools).toHaveProperty('workspaceTool');
 
     expect(result).toBe('I have scheduled the requested work via tools.');
